@@ -1,4 +1,4 @@
-﻿module github.com/amchdd/subdomainabber
+module github.com/amchdd/subdomainabber
 
 go 1.26
 
