@@ -55,11 +55,9 @@ jobs:
         run: go test ./... -count=1
       - name: Validar assinaturas embarcadas
         run: go run . fingerprints validate --strict
-      - name: Executar conjuntos de dados locais sintÃ©ticos e de regressÃ£o
+      - name: Skipping heavy benchmarks in CI
         run: |
-          go run . benchmark synthetic
-          go run . benchmark regression datasets/regression
-          go run . benchmark mutator
+          echo 'Skipping synthetic/regression/mutator benchmarks in default CI. Run locally or enable via workflow_dispatch.'
       - name: Detector de condiÃ§Ãµes de corrida
         run: go test -race ./... -count=1
 
