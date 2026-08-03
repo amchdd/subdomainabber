@@ -89,6 +89,14 @@ func RunL1Synthetic() bool {
 			continue
 		}
 
+		// Debug: log classification and evidences when unexpected or empty.
+		if result.NewClassification == "" {
+			fmt.Printf("DEBUG: %s produced empty classification. Evidences:\n", tc.Host)
+			for _, ev := range result.NewAnalysis.Evidences {
+				fmt.Printf("  - %s | %s | %v\n", ev.Type, ev.Source, ev.Metadata)
+			}
+		}
+
 		class := result.NewClassification
 
 		if class == string(tc.Classification) {
