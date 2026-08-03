@@ -1,6 +1,6 @@
-module github.com/amchdd/subdomainabber
+﻿module github.com/amchdd/subdomainabber
 
-go 1.26.5
+go 1.26
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.3
