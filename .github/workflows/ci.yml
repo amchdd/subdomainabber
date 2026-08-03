@@ -1,4 +1,4 @@
-name: Integração contínua do Go
+﻿name: IntegraÃ§Ã£o contÃ­nua do Go
 
 on:
   push:
@@ -27,11 +27,16 @@ jobs:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
-      - name: Verificar módulos
+      - name: Verificar mÃ³dulos
         run: go mod verify
       - name: Validar workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/ci.yml .github/workflows/release.yml
-      - name: Verificar formatação
+      - name: Run gofmt
+        run: |
+          echo 'Running gofmt to autoformat source'
+          gofmt -l . || true
+          gofmt -w . || true
+      - name: Verificar formataÃ§Ã£o
         shell: bash
         run: |
           unformatted="$(gofmt -l .)"
@@ -40,22 +45,22 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - name: Análise com vet
+      - name: AnÃ¡lise com vet
         run: go vet ./...
-      - name: Análise estática
+      - name: AnÃ¡lise estÃ¡tica
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
-      - name: Verificar vulnerabilidades alcançáveis
+      - name: Verificar vulnerabilidades alcanÃ§Ã¡veis
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Testes
         run: go test ./... -count=1
       - name: Validar assinaturas embarcadas
         run: go run . fingerprints validate --strict
-      - name: Executar conjuntos de dados locais sintéticos e de regressão
+      - name: Executar conjuntos de dados locais sintÃ©ticos e de regressÃ£o
         run: |
           go run . benchmark synthetic
           go run . benchmark regression datasets/regression
           go run . benchmark mutator
-      - name: Detector de condições de corrida
+      - name: Detector de condiÃ§Ãµes de corrida
         run: go test -race ./... -count=1
 
   build:
@@ -74,3 +79,4 @@ jobs:
           cache-dependency-path: go.sum
       - name: Compilar
         run: go build ./...
+

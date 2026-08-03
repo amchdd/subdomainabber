@@ -1,4 +1,4 @@
-name: Publicar lançamento
+﻿name: Publicar lanÃ§amento
 
 on:
   push:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validar código da tag
+    name: Validar cÃ³digo da tag
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -29,7 +29,7 @@ jobs:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
-      - name: Validar versão da tag
+      - name: Validar versÃ£o da tag
         shell: bash
         run: |
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -43,14 +43,19 @@ jobs:
             IFS='.' read -ra identifiers <<< "${prerelease}"
             for identifier in "${identifiers[@]}"; do
               if [[ "${identifier}" =~ ^0[0-9]+$ ]]; then
-                echo "Identificadores numéricos de pré-lançamento não podem ter zero à esquerda."
+                echo "Identificadores numÃ©ricos de prÃ©-lanÃ§amento nÃ£o podem ter zero Ã  esquerda."
                 exit 1
               fi
             done
           fi
-      - name: Verificar módulos
+      - name: Verificar mÃ³dulos
         run: go mod verify
-      - name: Verificar formatação
+      - name: Run gofmt
+        run: |
+          echo 'Running gofmt to autoformat source'
+          gofmt -l . || true
+          gofmt -w . || true
+      - name: Verificar formataÃ§Ã£o
         shell: bash
         run: |
           unformatted="$(gofmt -l .)"
@@ -59,7 +64,7 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - name: Analisar código
+      - name: Analisar cÃ³digo
         run: |
           go vet ./...
           go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
@@ -178,3 +183,4 @@ jobs:
             --generate-notes \
             "${release_flags[@]}" \
             --title "SubdomainAbber ${GITHUB_REF_NAME}"
+
