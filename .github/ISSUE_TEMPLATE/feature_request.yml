@@ -1,0 +1,32 @@
+name: Solicitação de funcionalidade
+description: Proponha uma melhoria de comportamento ou cobertura.
+title: "[Funcionalidade]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Qual limitação concreta esta proposta resolve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solução proposta
+    validations:
+      required: true
+  - type: textarea
+    id: traffic
+    attributes:
+      label: Impacto de segurança e tráfego
+      description: Informe se a proposta cria requisições, amplia o escopo ou altera estado externo.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Escopo
+      options:
+        - label: A proposta pode ser testada sem atingir infraestrutura pública não autorizada.
+          required: true

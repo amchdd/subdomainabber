@@ -1,0 +1,48 @@
+name: Relatório de defeito
+description: Relate um defeito reproduzível sem incluir dados sensíveis.
+title: "[Defeito]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Não inclua tokens, alvos privados ou dados de programas de bug bounty. Vulnerabilidades no projeto devem ser relatadas pela aba Security.
+  - type: input
+    id: version
+    attributes:
+      label: Versão
+      placeholder: v0.1.0-alpha
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema operacional
+      options: [Linux, Windows, macOS, Outro]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reprodução mínima
+      description: Use example.com, loopback ou dados sanitizados.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Resultado observado
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmações
+      options:
+        - label: Removi segredos e informações de terceiros.
+          required: true

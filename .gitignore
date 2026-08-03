@@ -1,0 +1,51 @@
+﻿# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database files
+*.db
+*.sqlite
+
+# Build output
+/bin/
+/build/
+/dist/
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local caches and large app data
+.node_modules/
+node_modules/
+.cache/
+.codex/
+.gemini/
+.AppData/
+.vscode-shared/
+
+# Go vendor
+vendor/
+
+# Logs
+*.log
+
+# Secrets
+*.pem
+*.key
+
+# Ignore personal home directories accidentally included
+AppData/
+Documents/
+Downloads/

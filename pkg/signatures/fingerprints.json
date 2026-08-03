@@ -1,0 +1,963 @@
+[
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "elasticbeanstalk.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #194](https://github.com/EdOverflow/can-i-take-over-xyz/issues/194)",
+    "documentation": "",
+    "fingerprint": "NXDOMAIN",
+    "http_status": null,
+    "nxdomain": true,
+    "service": "AWS/Elastic Beanstalk",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "s3.amazonaws.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #36](https://github.com/EdOverflow/can-i-take-over-xyz/issues/36)",
+    "documentation": "",
+    "fingerprint": "The specified bucket does not exist",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "AWS/S3",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "agilecrm.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #145](https://github.com/EdOverflow/can-i-take-over-xyz/issues/145)",
+    "documentation": "",
+    "fingerprint": "Sorry, this page is no longer available.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Agile CRM",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "airee.ru"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #104](https://github.com/EdOverflow/can-i-take-over-xyz/issues/104)",
+    "documentation": "",
+    "fingerprint": "Ошибка 402. Сервис Айри.рф не оплачен",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Airee.ru",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "animaapp.io"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #126](https://github.com/EdOverflow/can-i-take-over-xyz/issues/126)",
+    "documentation": "[Anima Documentation](https://docs.animaapp.com/v1/launchpad/08-custom-domain.html)",
+    "fingerprint": "The page you were looking for does not exist.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Anima",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "bitbucket.io"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #97](https://github.com/EdOverflow/can-i-take-over-xyz/issues/97)",
+    "documentation": "",
+    "fingerprint": "Repository not found",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Bitbucket",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "trydiscourse.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #49](https://github.com/EdOverflow/can-i-take-over-xyz/issues/49)",
+    "documentation": "[Hackerone](https://hackerone.com/reports/264494)",
+    "fingerprint": "NXDOMAIN",
+    "http_status": null,
+    "nxdomain": true,
+    "service": "Discourse",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "furyns.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #154](https://github.com/EdOverflow/can-i-take-over-xyz/issues/154)",
+    "documentation": "[Article](https://khaledibnalwalid.wordpress.com/2020/06/25/gemfury-subdomain-takeover/)",
+    "fingerprint": "404: This page could not be found.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Gemfury",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "ghost.io"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #89](https://github.com/EdOverflow/can-i-take-over-xyz/issues/89)",
+    "documentation": "",
+    "fingerprint": "Site unavailable\\.\u0026#124;Failed to resolve DNS path for this host",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Ghost",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "hatenablog.com"
+    ],
+    "confidence": 80,
+    "discussion": "",
+    "documentation": "",
+    "fingerprint": "404 Blog is not found",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "HatenaBlog",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "helpjuice.com"
+    ],
+    "confidence": 80,
+    "discussion": "",
+    "documentation": "[Help Juice Support Page](https://help.helpjuice.com/en_US/using-your-custom-domain/how-to-set-up-a-custom-domain)",
+    "fingerprint": "We could not find what you're looking for.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Help Juice",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "helpscoutdocs.com"
+    ],
+    "confidence": 80,
+    "discussion": "",
+    "documentation": "[HelpScout Docs](https://docs.helpscout.net/article/42-setup-custom-domain)",
+    "fingerprint": "No settings were found for this company:",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Help Scout",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "helprace.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #115](https://github.com/EdOverflow/can-i-take-over-xyz/issues/115)",
+    "documentation": "",
+    "fingerprint": "HTTP_STATUS=301",
+    "http_status": 301,
+    "nxdomain": false,
+    "service": "Helprace",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "youtrack.cloud"
+    ],
+    "confidence": 80,
+    "discussion": "[PR #107](https://github.com/EdOverflow/can-i-take-over-xyz/pull/107)",
+    "documentation": "[YouTrack InCloud Help Page](https://www.jetbrains.com/help/youtrack/incloud/Domain-Settings.html)",
+    "fingerprint": "is not a registered InCloud YouTrack",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "JetBrains",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "launchrock.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #74](https://github.com/EdOverflow/can-i-take-over-xyz/issues/74)",
+    "documentation": "",
+    "fingerprint": "HTTP_STATUS=500",
+    "http_status": 500,
+    "nxdomain": false,
+    "service": "LaunchRock",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "cloudapp.net",
+      "cloudapp.azure.com",
+      "azurewebsites.net",
+      "blob.core.windows.net",
+      "cloudapp.azure.com",
+      "azure-api.net",
+      "azurehdinsight.net",
+      "azureedge.net",
+      "azurecontainer.io",
+      "database.windows.net",
+      "azuredatalakestore.net",
+      "search.windows.net",
+      "azurecr.io",
+      "redis.cache.windows.net",
+      "azurehdinsight.net",
+      "servicebus.windows.net",
+      "visualstudio.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #35](https://github.com/EdOverflow/can-i-take-over-xyz/issues/35)",
+    "documentation": "",
+    "fingerprint": "NXDOMAIN",
+    "http_status": null,
+    "nxdomain": true,
+    "service": "Microsoft Azure",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "ngrok.io"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #92](https://github.com/EdOverflow/can-i-take-over-xyz/issues/92)",
+    "documentation": "[Ngrok Documentation](https://ngrok.com/docs#http-custom-domains)",
+    "fingerprint": "Tunnel .*.ngrok.io not found",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Ngrok",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "readme.io"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #41](https://github.com/EdOverflow/can-i-take-over-xyz/issues/41)",
+    "documentation": "",
+    "fingerprint": "The creators of this project are still working on making everything perfect!",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Readme.io",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "52.16.160.97"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #139](https://github.com/EdOverflow/can-i-take-over-xyz/issues/139)",
+    "documentation": "[Support Page](https://help.smartjobboard.com/en/articles/1269655-connecting-a-custom-domain-name)",
+    "fingerprint": "This job board website is either expired or its domain name is invalid.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "SmartJobBoard",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "s.strikinglydns.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #58](https://github.com/EdOverflow/can-i-take-over-xyz/issues/58)",
+    "documentation": "[Strikingly-Sub-takeover](https://medium.com/@sherif0x00/takeover-subdomains-pointing-to-strikingly-5e67df80cdfd)",
+    "fingerprint": "PAGE NOT FOUND.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Strikingly",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "na-west1.surge.sh"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #198](https://github.com/EdOverflow/can-i-take-over-xyz/issues/198)",
+    "documentation": "[Surge Documentation](https://surge.sh/help/adding-a-custom-domain)",
+    "fingerprint": "project not found",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Surge.sh",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "surveysparrow.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #281](https://github.com/EdOverflow/can-i-take-over-xyz/issues/281)",
+    "documentation": "[Custom domain](https://help.surveysparrow.com/custom-domain)",
+    "fingerprint": "Account not found.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "SurveySparrow",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "read.uberflip.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #150](https://github.com/EdOverflow/can-i-take-over-xyz/issues/150)",
+    "documentation": "[Uberflip Documentation](https://help.uberflip.com/hc/en-us/articles/360018786372-Custom-Domain-Set-up-Your-Hub-on-a-Subdomain)",
+    "fingerprint": "The URL you've accessed does not provide a hub.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Uberflip",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": false,
+    "cname": [
+      "stats.uptimerobot.com"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #45](https://github.com/EdOverflow/can-i-take-over-xyz/issues/45)",
+    "documentation": "[Uptimerobot-Sub-takeover](https://exploit.linuxsec.org/uptimerobot-com-custom-domain-subdomain-takeover/)",
+    "fingerprint": "page not found",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Uptimerobot",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "wordpress.com"
+    ],
+    "confidence": 80,
+    "discussion": "[PR #176](https://github.com/EdOverflow/can-i-take-over-xyz/pull/176)",
+    "documentation": "",
+    "fingerprint": "Do you want to register .*.wordpress.com?",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Wordpress",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cicd_pass": true,
+    "cname": [
+      "worksites.net",
+      "69.164.223.206"
+    ],
+    "confidence": 80,
+    "discussion": "[Issue #142](https://github.com/EdOverflow/can-i-take-over-xyz/issues/142)",
+    "documentation": "",
+    "fingerprint": "Hello! Sorry, but the website you\u0026rsquo;re looking for doesn\u0026rsquo;t exist.",
+    "http_status": null,
+    "nxdomain": false,
+    "service": "Worksites",
+    "status": "Vulnerable",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "vercel.app"
+    ],
+    "confidence": 80,
+    "fingerprint": "The deployment could not be found on Vercel.",
+    "http_status": 404,
+    "service": "Vercel",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "netlify.app",
+      "netlify.com"
+    ],
+    "confidence": 80,
+    "fingerprint": "Not Found - Request ID:",
+    "http_status": 404,
+    "service": "Netlify",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "fly.dev"
+    ],
+    "confidence": 80,
+    "fingerprint": "404 Not Found",
+    "service": "Fly.io",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "supabase.co",
+      "supabase.in"
+    ],
+    "confidence": 80,
+    "fingerprint": "Not Found",
+    "http_status": 404,
+    "service": "Supabase",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "onrender.com"
+    ],
+    "confidence": 80,
+    "fingerprint": "Not Found",
+    "http_status": 404,
+    "service": "Render",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "kinsta.cloud",
+      "kinsta.com"
+    ],
+    "confidence": 80,
+    "fingerprint": "No Site Found",
+    "service": "Kinsta",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "confidence": 80,
+    "fingerprint": "Mailgun",
+    "mx_fingerprints": [
+      "mxa.mailgun.org",
+      "mxb.mailgun.org"
+    ],
+    "service": "Mailgun MX Takeover",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "confidence": 80,
+    "fingerprint": "Zendesk",
+    "mx_fingerprints": [
+      "mail.zendesk.com"
+    ],
+    "service": "Zendesk MX Takeover",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "firebaseapp.com",
+      "web.app"
+    ],
+    "confidence": 80,
+    "fingerprint": "Site Not Found",
+    "service": "Firebase Hosting",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "pages.dev"
+    ],
+    "confidence": 80,
+    "fingerprint": "Error 404: Page Not Found",
+    "service": "Cloudflare Pages",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "proxy.webflow.com",
+      "proxy-ssl.webflow.com"
+    ],
+    "confidence": 80,
+    "fingerprint": "The page you are looking for doesn't exist or has been moved",
+    "service": "Webflow",
+    "vulnerable": true
+  },
+  {
+    "check_type": "cname",
+    "cname": [
+      "gitlab.io"
+    ],
+    "confidence": 80,
+    "fingerprint": "404 Not Found",
+    "service": "GitLab Pages",
+    "vulnerable": true
+  },
+  {
+    "active_verifier": "aws_route53",
+    "check_type": "ns",
+    "cname": [],
+    "confidence": 90,
+    "fingerprint": "",
+    "ns_fingerprints": [
+      "awsdns-*.com",
+      "awsdns-*.net",
+      "awsdns-*.org",
+      "awsdns-*.co.uk"
+    ],
+    "proof_requirements": [
+      "criar zona hospedada",
+      "obter o conjunto exato de servidores NS delegados",
+      "liberar zona hospedada"
+    ],
+    "service": "AWS Route53",
+    "status": "Prova ativa disponível apenas no modo agressivo autorizado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "ns",
+    "cname": [],
+    "confidence": 90,
+    "fingerprint": "",
+    "ns_fingerprints": [
+      "azure-dns.com",
+      "azure-dns.net",
+      "azure-dns.org",
+      "azure-dns.info"
+    ],
+    "proof_requirements": [
+      "criar zona no provedor",
+      "obter o conjunto exato de servidores NS delegados",
+      "liberar zona"
+    ],
+    "service": "Azure DNS",
+    "status": "Candidato até que um adaptador de reivindicação do Azure comprove o controle",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "aspmx.l.google.com",
+      "googlemail.com"
+    ],
+    "proof_requirements": [
+      "vincular domínio de e-mail",
+      "receber mensagem de desafio exclusiva",
+      "remover vínculo"
+    ],
+    "service": "Google Workspace MX",
+    "status": "Apenas referência quebrada até que o controle de entrega seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "mail.protection.outlook.com"
+    ],
+    "proof_requirements": [
+      "vincular domínio de e-mail",
+      "receber mensagem de desafio exclusiva",
+      "remover vínculo"
+    ],
+    "service": "Microsoft 365 MX",
+    "status": "Apenas referência quebrada até que o controle de entrega seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "mailgun.org"
+    ],
+    "proof_requirements": [
+      "vincular domínio",
+      "concluir verificação do provedor",
+      "comprovar controle da mensagem ou do SPF",
+      "remover vínculo"
+    ],
+    "service": "Mailgun MX/SPF",
+    "spf_confidence": 95,
+    "spf_fingerprints": [
+      "mailgun.org"
+    ],
+    "status": "Candidato até que o controle no provedor seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "sendgrid.net"
+    ],
+    "proof_requirements": [
+      "vincular domínio",
+      "concluir verificação do provedor",
+      "comprovar controle da entrega ou do SPF",
+      "remover vínculo"
+    ],
+    "service": "Twilio SendGrid MX/SPF",
+    "spf_confidence": 95,
+    "spf_fingerprints": [
+      "sendgrid.net"
+    ],
+    "status": "Candidato até que o controle no provedor seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "srv",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "vincular domínio do serviço",
+      "responder ao desafio do protocolo na porta declarada",
+      "remover vínculo"
+    ],
+    "service": "Microsoft 365 SRV",
+    "srv_confidence": 95,
+    "srv_fingerprints": [
+      "online.lync.com",
+      "outlook.com"
+    ],
+    "status": "Apenas referência quebrada até que o controle do protocolo seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "srv",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "vincular domínio do serviço",
+      "responder ao desafio do protocolo na porta declarada",
+      "remover vínculo"
+    ],
+    "service": "Cisco Webex SRV",
+    "srv_confidence": 95,
+    "srv_fingerprints": [
+      "ciscospark.com"
+    ],
+    "status": "Apenas referência quebrada até que o controle do protocolo seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "txt",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "tentar vínculo com o provedor",
+      "comprovar que o token é aceito em um novo vínculo",
+      "remover vínculo"
+    ],
+    "service": "Google TXT Verification",
+    "status": "Apenas token observado até que o vínculo com o provedor seja comprovado",
+    "txt_confidence": 100,
+    "txt_fingerprints": [
+      "google-site-verification="
+    ],
+    "vulnerable": true
+  },
+  {
+    "check_type": "txt",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "tentar vínculo com o tenant",
+      "comprovar que o token é aceito",
+      "remover vínculo"
+    ],
+    "service": "Microsoft TXT Verification",
+    "status": "Apenas token observado até que o vínculo com o provedor seja comprovado",
+    "txt_confidence": 100,
+    "txt_fingerprints": [
+      "ms="
+    ],
+    "vulnerable": true
+  },
+  {
+    "asn_confidence": 90,
+    "asn_fingerprints": [
+      "AS16509",
+      "AMAZON-02",
+      "Amazon.com"
+    ],
+    "check_type": "a",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "alocar o endereço exato referenciado",
+      "responder a um desafio exclusivo",
+      "liberar endereço"
+    ],
+    "service": "Amazon Web Services IP",
+    "status": "Apenas contexto de nuvem até que o controle do endereço exato seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "asn_confidence": 90,
+    "asn_fingerprints": [
+      "AS8075",
+      "MICROSOFT-CORP-MSN-AS-BLOCK"
+    ],
+    "check_type": "a",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "alocar o endereço exato referenciado",
+      "responder a um desafio exclusivo",
+      "liberar endereço"
+    ],
+    "service": "Microsoft Azure IP",
+    "status": "Apenas contexto de nuvem até que o controle do endereço exato seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "ns",
+    "cname": [],
+    "confidence": 90,
+    "fingerprint": "",
+    "ns_fingerprints": [
+      "digitalocean.com"
+    ],
+    "proof_requirements": [
+      "criar zona no provedor",
+      "obter o conjunto exato de servidores NS delegados",
+      "liberar zona"
+    ],
+    "service": "DigitalOcean DNS",
+    "status": "Candidato até que um adaptador de reivindicação da DigitalOcean comprove o controle",
+    "vulnerable": true
+  },
+  {
+    "check_type": "ns",
+    "cname": [],
+    "confidence": 90,
+    "fingerprint": "",
+    "ns_fingerprints": [
+      "googledomains.com"
+    ],
+    "proof_requirements": [
+      "criar zona no provedor",
+      "obter o conjunto exato de servidores NS delegados",
+      "liberar zona"
+    ],
+    "service": "Google Cloud DNS",
+    "status": "Candidato até que um adaptador de reivindicação do Google Cloud comprove o controle",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "protonmail.ch"
+    ],
+    "proof_requirements": [
+      "vincular domínio de e-mail",
+      "receber mensagem de desafio exclusiva",
+      "remover vínculo"
+    ],
+    "service": "Proton Mail MX",
+    "status": "Apenas referência quebrada até que o controle de entrega seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "mx",
+    "cname": [],
+    "fingerprint": "",
+    "mx_confidence": 95,
+    "mx_fingerprints": [
+      "messagingengine.com"
+    ],
+    "proof_requirements": [
+      "vincular domínio de e-mail",
+      "receber mensagem de desafio exclusiva",
+      "remover vínculo"
+    ],
+    "service": "Fastmail MX",
+    "status": "Apenas referência quebrada até que o controle de entrega seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "srv",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "vincular domínio do serviço",
+      "responder ao desafio SIP na porta declarada",
+      "remover vínculo"
+    ],
+    "service": "Twilio SIP SRV",
+    "srv_confidence": 95,
+    "srv_fingerprints": [
+      "sip.twilio.com"
+    ],
+    "status": "Apenas referência quebrada até que o controle do protocolo seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "srv",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "vincular domínio do serviço",
+      "responder ao desafio do protocolo na porta declarada",
+      "remover vínculo"
+    ],
+    "service": "Zoom SRV",
+    "srv_confidence": 95,
+    "srv_fingerprints": [
+      "zoom.us"
+    ],
+    "status": "Apenas referência quebrada até que o controle do protocolo seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "check_type": "txt",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "tentar vínculo com o tenant",
+      "comprovar que o token é aceito",
+      "remover vínculo"
+    ],
+    "service": "Atlassian TXT Verification",
+    "status": "Apenas token observado até que o vínculo com o provedor seja comprovado",
+    "txt_confidence": 100,
+    "txt_fingerprints": [
+      "atlassian-domain-verification="
+    ],
+    "vulnerable": true
+  },
+  {
+    "check_type": "txt",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "tentar vínculo com o provedor",
+      "comprovar que o token é aceito",
+      "remover vínculo"
+    ],
+    "service": "Apple TXT Verification",
+    "status": "Apenas token observado até que o vínculo com o provedor seja comprovado",
+    "txt_confidence": 100,
+    "txt_fingerprints": [
+      "apple-domain-verification="
+    ],
+    "vulnerable": true
+  },
+  {
+    "asn_confidence": 90,
+    "asn_fingerprints": [
+      "AS15169",
+      "GOOGLE"
+    ],
+    "check_type": "a",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "alocar o endereço exato referenciado",
+      "responder a um desafio exclusivo",
+      "liberar endereço"
+    ],
+    "service": "Google Cloud IP",
+    "status": "Apenas contexto de nuvem até que o controle do endereço exato seja comprovado",
+    "vulnerable": true
+  },
+  {
+    "asn_confidence": 90,
+    "asn_fingerprints": [
+      "AS14061",
+      "DIGITALOCEAN-ASN"
+    ],
+    "check_type": "a",
+    "cname": [],
+    "fingerprint": "",
+    "proof_requirements": [
+      "alocar o endereço exato referenciado",
+      "responder a um desafio exclusivo",
+      "liberar endereço"
+    ],
+    "service": "DigitalOcean IP",
+    "status": "Apenas contexto de nuvem até que o controle do endereço exato seja comprovado",
+    "vulnerable": true
+  }
+]

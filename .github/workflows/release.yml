@@ -1,0 +1,180 @@
+name: Publicar lançamento
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validar código da tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Validar versão da tag
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "A tag deve seguir o formato vMAJOR.MINOR.PATCH, com sufixo opcional do SemVer."
+            exit 1
+          fi
+
+          version_without_build="${GITHUB_REF_NAME%%+*}"
+          if [[ "${version_without_build}" == *-* ]]; then
+            prerelease="${version_without_build#*-}"
+            IFS='.' read -ra identifiers <<< "${prerelease}"
+            for identifier in "${identifiers[@]}"; do
+              if [[ "${identifier}" =~ ^0[0-9]+$ ]]; then
+                echo "Identificadores numéricos de pré-lançamento não podem ter zero à esquerda."
+                exit 1
+              fi
+            done
+          fi
+      - name: Verificar módulos
+        run: go mod verify
+      - name: Verificar formatação
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Os seguintes arquivos precisam de gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Analisar código
+        run: |
+          go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Executar testes
+        run: go test -race ./... -count=1
+      - name: Validar dados embarcados
+        run: |
+          go run . fingerprints validate --strict
+          go run . benchmark synthetic
+          go run . benchmark regression datasets/regression
+          go run . benchmark mutator
+
+  build:
+    name: Compilar ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Compilar e empacotar
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME}"
+          base="subdomainabber_${version#v}_${GOOS}_${GOARCH}"
+          binary="subdomainabber"
+          if [[ "${GOOS}" == "windows" ]]; then
+            binary="subdomainabber.exe"
+          fi
+
+          mkdir -p dist package
+          CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/amchdd/subdomainabber/internal/buildinfo.Version=${version}" \
+            -o "package/${binary}" .
+          cp .env.example CHANGELOG.md LICENSE README.md SECURITY.md THIRD_PARTY_NOTICES.md config.example.yaml package/
+
+          if [[ "${GOOS}/${GOARCH}" == "linux/amd64" ]]; then
+            actual="$(package/${binary} --version)"
+            test "${actual}" = "${version}"
+          fi
+
+          if [[ "${GOOS}" == "windows" ]]; then
+            (cd package && zip -q -r "../dist/${base}.zip" .)
+          else
+            tar -C package -czf "dist/${base}.tar.gz" .
+          fi
+      - name: Armazenar pacote
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pacote-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Criar GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar pacotes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Gerar checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum subdomainabber_* > SHA256SUMS
+      - name: Publicar ativos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_flags=()
+          version_without_build="${GITHUB_REF_NAME%%+*}"
+          if [[ "${version_without_build}" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            "${release_flags[@]}" \
+            --title "SubdomainAbber ${GITHUB_REF_NAME}"

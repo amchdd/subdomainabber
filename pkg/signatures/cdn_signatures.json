@@ -1,0 +1,71 @@
+[
+  {
+    "name": "Cloudflare",
+    "headers": {
+      "server": "cloudflare",
+      "cf-ray": "",
+      "cf-cache-status": ""
+    }
+  },
+  {
+    "name": "Akamai",
+    "headers": {
+      "server": "akamai",
+      "x-akamai-transformed": ""
+    }
+  },
+  {
+    "name": "Fastly",
+    "headers": {
+      "x-fastly-request-id": ""
+    }
+  },
+  {
+    "name": "AWS CloudFront",
+    "headers": {
+      "x-amz-cf-id": "",
+      "x-amz-cf-pop": "",
+      "server": "cloudfront"
+    }
+  },
+  {
+    "name": "Incapsula",
+    "headers": {
+      "x-iinfo": "",
+      "x-cdn": "incapsula"
+    }
+  },
+  {
+    "name": "Sucuri",
+    "headers": {
+      "x-sucuri-id": "",
+      "x-sucuri-cache": "",
+      "server": "sucuri"
+    }
+  },
+  {
+    "name": "StackPath",
+    "headers": {
+      "x-sp-edge": "",
+      "server": "stackpath"
+    }
+  },
+  {
+    "name": "KeyCDN",
+    "headers": {
+      "server": "keycdn"
+    }
+  },
+  {
+    "name": "Azure CDN",
+    "headers": {
+      "x-azure-ref": ""
+    }
+  },
+  {
+    "name": "Google Cloud CDN",
+    "headers": {
+      "via": "google"
+    }
+  }
+]

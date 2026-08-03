@@ -1,0 +1,45 @@
+# Exemplo de configuração do SubdomainAbber.
+# Copie somente os campos necessários e não versione a cópia com segredos.
+
+# Execução
+concurrency: 50
+timeout: 5
+rate_limit: 10
+db_path: subdomainabber.db
+verbose: false
+silent: false
+json_output: false
+no_color: false
+
+# DNS e HTTP
+resolvers_file: ""
+proxy: ""
+check_ns: false
+no_wildcard_filter: false
+follow_redirects: false
+user_agent: SubdomainAbber/v0.1.0-alpha
+doh: ""
+headers: false
+
+# Assinaturas adicionais
+sigs_file: ""
+sigs_dir: ""
+
+# Execução contínua. Deixe vazio para executar uma única vez.
+daemon: ""
+
+# Notificações. Prefira variáveis de ambiente para estes segredos.
+discord_webhook: ""
+discord_min_severity: medium
+telegram: ""
+
+# APIs de coleta passiva
+alienvault_token: ""
+certspotter_token: ""
+urlscan_token: ""
+
+# Credenciais usadas somente pelo modo agressivo autorizado.
+aws_access_key: ""
+aws_secret_key: ""
+aws_session_token: ""
+aws_region: us-east-1
