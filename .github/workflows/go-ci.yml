@@ -30,7 +30,9 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
-          version: v1.55.0
+          version: latest
+          install-mode: source
+          skip-cache: true
       - name: Run golangci-lint
         run: golangci-lint run ./...
       - name: Run tests
