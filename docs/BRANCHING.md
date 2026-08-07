@@ -72,6 +72,16 @@ Correções urgentes de uma versão estável partem de `main` e usam `hotfix/*`.
 
 A `main` aceita merge commits intencionais de promoção da `dev`; por isso, ela não deve exigir histórico estritamente linear. A `dev` pode continuar exigindo histórico linear, pois recebe branches curtas por squash.
 
+## Verificação dos rulesets
+
+Depois de alterar regras de proteção ou a visibilidade do repositório, execute um smoke test com uma branch documental descartável criada a partir de `dev`.
+
+1. abra um pull request `docs/* → dev` com uma mudança mínima;
+2. confirme que a política de branch e título é executada;
+3. confirme que testes e builds obrigatórios são exigidos;
+4. integre por **Squash and merge** somente após todos os checks passarem;
+5. remova a branch temporária sem alterar `main` ou `dev` diretamente.
+
 ## Lançamentos
 
 1. atualize changelog, versão e documentação em `dev`;
