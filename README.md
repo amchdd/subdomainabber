@@ -1,4 +1,4 @@
-# SubdomainAbber
+# Subdomainabber
 
 [![Version](https://img.shields.io/badge/version-v0.1.0--alpha-orange)](CHANGELOG.md)
 [![Go CI](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml/badge.svg)](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml)
