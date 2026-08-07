@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -13,8 +14,10 @@ updates:
       golang-x:
         patterns:
           - "golang.org/x/*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
