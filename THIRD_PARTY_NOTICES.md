@@ -7,7 +7,7 @@ Parte das assinaturas CNAME em `pkg/signatures/fingerprints.json` deriva do cat�
 EdOverflow e mantido por seus colaboradores. O material de origem é distribuído
 sob a licença [Creative Commons Attribution 4.0 International](https://github.com/EdOverflow/can-i-take-over-xyz/blob/master/LICENSE).
 
-O SubdomainAbber não incorpora o catálogo original sem alterações. A versão local:
+O Subdomainabber não incorpora o catálogo original sem alterações. A versão local:
 
 - mantém apenas entradas relevantes ao modelo de detecção do projeto;
 - normaliza padrões de nomes DNS;
@@ -16,5 +16,6 @@ O SubdomainAbber não incorpora o catálogo original sem alterações. A versão
 - traduz anotações operacionais, preservando literais necessários para reconhecer respostas de provedores.
 
 Origem e licença verificadas em 3 de agosto de 2026. As alterações locais e o código
-do SubdomainAbber permanecem sob a licença indicada no arquivo `LICENSE`; o material
-derivado identificado acima continua sujeito às condições de atribuição da CC BY 4.0.
+original do Subdomainabber permanecem sob a MIT License com a Commons Clause License
+Condition v1.0, conforme os arquivos `LICENSE` e `LICENSING.md`; o material derivado
+identificado acima continua sujeito às condições de atribuição da CC BY 4.0.

@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-v0.1.0--alpha-orange)](CHANGELOG.md)
 [![Go CI](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml/badge.svg)](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![License: MIT + Commons Clause](https://img.shields.io/badge/license-MIT%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
 
 Subdomainabber é uma ferramenta de varredura em Go para investigar possíveis casos de takeover de subdomínio em programas de bug bounty e avaliações de segurança autorizadas. Ela correlaciona DNS, HTTP e TLS, registra evidências reproduzíveis e mantém um histórico local em SQLite.
 
@@ -303,4 +303,10 @@ O detector de condições de corrida depende de CGO. No Windows, instale um comp
 
 Leia [CONTRIBUTING.md](CONTRIBUTING.md) antes de enviar mudanças. Vulnerabilidades no próprio projeto devem seguir [SECURITY.md](SECURITY.md).
 
-O código original do projeto é distribuído sob a [MIT License](LICENSE). O catálogo inclui material derivado sujeito aos avisos e às condições descritos em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+## Licença
+
+O código original do projeto é disponibilizado sob a [MIT License com a Commons Clause License Condition v1.0](LICENSE). A Commons Clause restringe a venda do Software conforme a definição presente no texto da licença, tornando o projeto **source-available**.
+
+A versão `v0.1.0-alpha` e os commits publicados antes da adoção da Commons Clause permanecem sob os termos da licença MIT que os acompanhava. Consulte [LICENSING.md](LICENSING.md) para o histórico e o resumo dos termos.
+
+O catálogo inclui material derivado sujeito aos avisos e às condições descritos em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
