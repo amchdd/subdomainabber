@@ -1,6 +1,23 @@
 ## Resumo
 
-Descreva o problema e a solução.
+Descreva o problema, a solução e o motivo da mudança.
+
+## Tipo de mudança
+
+- [ ] `feat`: nova funcionalidade
+- [ ] `fix`: correção de defeito
+- [ ] `docs`: documentação
+- [ ] `refactor`: refatoração
+- [ ] `test`: testes
+- [ ] `ci`/`build`: automação, build ou dependências
+- [ ] `chore`: manutenção
+
+## Branch e destino
+
+- [ ] O título segue Conventional Commits.
+- [ ] A branch de trabalho partiu de `dev` e o PR aponta para `dev`.
+- [ ] Caso o PR aponte para `main`, ele parte de `dev` ou de `hotfix/*`.
+- [ ] O PR está focado em uma única mudança coerente.
 
 ## Segurança e tráfego
 
@@ -21,9 +38,10 @@ Descreva o problema e a solução.
 - [ ] `go run . fingerprints validate --strict`
 - [ ] `go build ./...`
 
-## Compatibilidade
+## Compatibilidade e documentação
 
-Liste mudanças de CLI, esquema, configuração ou formato de saída, se houver.
+Descreva qualquer impacto na CLI, configuração, banco de dados, formato de saída ou comportamento de rede.
 
 - [ ] README, changelog e exemplos de configuração foram atualizados quando necessário.
 - [ ] Avisos de terceiros continuam corretos para qualquer dado ou assinatura incorporada.
+- [ ] Não há mudança incompatível sem documentação e justificativa explícitas.
