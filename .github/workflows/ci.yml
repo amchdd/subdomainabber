@@ -1,4 +1,4 @@
-﻿name: IntegraÃ§Ã£o contÃ­nua do Go
+name: Integração contínua do Go
 
 on:
   push:
@@ -24,19 +24,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
-      - name: Verificar mÃ³dulos
+      - name: Verificar módulos
         run: go mod verify
       - name: Validar workflows
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/ci.yml .github/workflows/release.yml
-      - name: Run gofmt
-        run: |
-          echo 'Running gofmt to autoformat source'
-          gofmt -l . || true
-          gofmt -w . || true
-      - name: Verificar formataÃ§Ã£o
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
+      - name: Verificar formatação
         shell: bash
         run: |
           unformatted="$(gofmt -l .)"
@@ -45,20 +40,17 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - name: AnÃ¡lise com vet
+      - name: Análise com vet
         run: go vet ./...
-      - name: AnÃ¡lise estÃ¡tica
+      - name: Análise estática
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
-      - name: Verificar vulnerabilidades alcanÃ§Ã¡veis
+      - name: Verificar vulnerabilidades alcançáveis
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Testes
         run: go test ./... -count=1
       - name: Validar assinaturas embarcadas
         run: go run . fingerprints validate --strict
-      - name: Skipping heavy benchmarks in CI
-        run: |
-          echo 'Skipping synthetic/regression/mutator benchmarks in default CI. Run locally or enable via workflow_dispatch.'
-      - name: Detector de condiÃ§Ãµes de corrida
+      - name: Detector de condições de corrida
         run: go test -race ./... -count=1
 
   build:
@@ -72,9 +64,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
       - name: Compilar
         run: go build ./...
-
