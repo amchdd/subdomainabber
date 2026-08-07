@@ -8,7 +8,7 @@ O Subdomainabber usa um fluxo simples de integração contínua, com branches cu
 
 Representa o estado estável do projeto.
 
-- recebe apenas pull requests vindas de `dev` ou de `hotfix/*`;
+- recebe pull requests vindas de `dev`, de `hotfix/*` ou atualizações de segurança abertas por `dependabot[bot]` em `dependabot/*`;
 - deve permanecer publicável e compatível com o processo de release;
 - tags e releases são criadas a partir desta branch;
 - commits diretos não fazem parte do fluxo normal.
@@ -46,6 +46,8 @@ docs/active-validation
 ci/cache-policy
 ```
 
+O prefixo `dependabot/*` é reservado ao `dependabot[bot]`. Pull requests de atualização de versão apontam para `dev`; atualizações de segurança podem apontar diretamente para `main`, conforme o comportamento do GitHub.
+
 ## Hotfixes
 
 Correções urgentes de uma versão estável partem de `main` e usam `hotfix/*`.
@@ -57,9 +59,10 @@ Correções urgentes de uma versão estável partem de `main` e usam `hotfix/*`.
 ## Pull requests
 
 - branches de trabalho normalmente apontam para `dev`;
-- apenas `dev` e `hotfix/*` apontam para `main`;
+- `dev` e `hotfix/*` apontam para `main`;
+- `dependabot/*` pode apontar para `main` somente quando o autor for `dependabot[bot]`;
 - mantenha cada pull request pequeno e focado;
-- use títulos no padrão Conventional Commits, como `feat(dns): adicionar evidência DNSSEC`;
+- use títulos no padrão Conventional Commits, como `feat(dns): adicionar evidência DNSSEC`; pull requests genuínos do Dependabot são validados pela identidade do bot;
 - prefira squash merge para manter o histórico da branch estável legível;
 - não faça merge com verificações obrigatórias falhando;
 - mudanças de comportamento devem incluir testes e documentação correspondente.
