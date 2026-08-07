@@ -54,7 +54,8 @@ Correções urgentes de uma versão estável partem de `main` e usam `hotfix/*`.
 
 1. crie `hotfix/<descrição>` a partir de `main`;
 2. abra o pull request para `main`;
-3. depois do merge, sincronize a correção em `dev` por pull request ou merge controlado.
+3. use squash merge para integrar a correção;
+4. sincronize a correção em `dev` por pull request ou merge controlado.
 
 ## Pull requests
 
@@ -63,15 +64,19 @@ Correções urgentes de uma versão estável partem de `main` e usam `hotfix/*`.
 - `dependabot/*` pode apontar para `main` somente quando o autor for `dependabot[bot]`;
 - mantenha cada pull request pequeno e focado;
 - use títulos no padrão Conventional Commits, como `feat(dns): adicionar evidência DNSSEC`; pull requests genuínos do Dependabot são validados pela identidade do bot;
-- prefira squash merge para manter o histórico da branch estável legível;
+- use squash merge em branches curtas que entram em `dev`;
+- use **Create a merge commit** em pull requests de `dev` para `main`, preservando a ancestralidade das duas branches permanentes;
+- hotfixes e atualizações isoladas do Dependabot podem usar squash merge;
 - não faça merge com verificações obrigatórias falhando;
 - mudanças de comportamento devem incluir testes e documentação correspondente.
+
+A `main` aceita merge commits intencionais de promoção da `dev`; por isso, ela não deve exigir histórico estritamente linear. A `dev` pode continuar exigindo histórico linear, pois recebe branches curtas por squash.
 
 ## Lançamentos
 
 1. atualize changelog, versão e documentação em `dev`;
 2. abra um pull request de `dev` para `main`;
 3. valide a CI e revise o conteúdo completo da versão;
-4. faça o merge;
+4. escolha **Create a merge commit**, não squash, para preservar a relação entre `dev` e `main`;
 5. crie a tag semântica a partir de `main`;
 6. aguarde o workflow de release concluir antes de anunciar a versão.
