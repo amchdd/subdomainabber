@@ -2,6 +2,27 @@
 
 Obrigado por contribuir com o Subdomainabber. O projeto prioriza evidência reproduzível, baixo ruído e uso autorizado.
 
+## Fluxo de desenvolvimento
+
+O projeto mantém duas branches permanentes:
+
+- `main`: estado estável, tags e releases;
+- `dev`: integração das mudanças destinadas à próxima versão.
+
+Crie branches de trabalho a partir de `dev` e abra o pull request de volta para `dev`. Use prefixos como `feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `ci/`, `build/`, `perf/` ou `chore/`.
+
+Pull requests para `main` devem vir somente de `dev` ou de uma branch `hotfix/*`. Hotfixes partem de `main` e precisam ser sincronizados posteriormente em `dev`.
+
+Use títulos no padrão Conventional Commits, por exemplo:
+
+```text
+feat(dns): adicionar evidência DNSSEC
+fix(http): impedir promoção por assinatura genérica
+docs: explicar validação ativa
+```
+
+Consulte [docs/BRANCHING.md](docs/BRANCHING.md) para o fluxo completo.
+
 ## Ambiente de desenvolvimento
 
 Use Go 1.26.5 ou superior:
@@ -11,7 +32,7 @@ go mod download
 go fmt ./...
 go mod verify
 go vet ./...
-go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/ci.yml .github/workflows/release.yml
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
 go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
 go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 go test ./... -count=1
@@ -51,10 +72,14 @@ Textos destinados ao usuário devem ser escritos em PT-BR claro e direto. Não t
 
 Antes de criar uma versão, mantenha a mesma versão semântica no `CHANGELOG.md`, em `internal/buildinfo/version.go` e nas referências do `README.md`. Execute todas as verificações da seção de ambiente de desenvolvimento e confirme que a árvore de trabalho contém apenas as mudanças previstas para o lançamento.
 
-Crie a tag no formato `vMAJOR.MINOR.PATCH` ou com um sufixo de pré-lançamento, como `v0.2.0-alpha`. O fluxo de lançamento valida a tag, compila os pacotes para as plataformas suportadas, gera as somas de verificação e publica versões com sufixo `alpha` ou `beta` como pré-lançamentos. Não anuncie uma versão antes da conclusão bem-sucedida desse fluxo.
+Consolide a versão em `dev`, abra um pull request de `dev` para `main` e faça o merge somente com a CI verde. Depois, crie a tag no formato `vMAJOR.MINOR.PATCH` ou com um sufixo de pré-lançamento, como `v0.2.0-alpha`, a partir de `main`.
+
+O fluxo de lançamento valida a tag, compila os pacotes para as plataformas suportadas, gera as somas de verificação e publica versões com sufixo `alpha` ou `beta` como pré-lançamentos. Não anuncie uma versão antes da conclusão bem-sucedida desse fluxo.
 
 ## Solicitações de alteração
 
 Mantenha cada PR focado. Descreva o comportamento anterior, a mudança proposta, o risco de tráfego, os testes executados e qualquer impacto no formato de dados ou na CLI. Mudanças em opções, configuração ou esquema também devem atualizar o README, o changelog, [.env.example](.env.example) e [config.example.yaml](config.example.yaml), conforme aplicável.
+
+Prefira squash merge para branches de trabalho. Não faça merge enquanto verificações obrigatórias estiverem falhando ou enquanto houver discussões de revisão não resolvidas.
 
 Vulnerabilidades no próprio projeto devem ser relatadas conforme [SECURITY.md](SECURITY.md), não em relatórios públicos.
