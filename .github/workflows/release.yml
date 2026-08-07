@@ -1,4 +1,4 @@
-﻿name: Publicar lanÃ§amento
+name: Publicar lançamento
 
 on:
   push:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validar cÃ³digo da tag
+    name: Validar código da tag
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -26,10 +26,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
-      - name: Validar versÃ£o da tag
+      - name: Validar versão da tag
         shell: bash
         run: |
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -43,19 +43,14 @@ jobs:
             IFS='.' read -ra identifiers <<< "${prerelease}"
             for identifier in "${identifiers[@]}"; do
               if [[ "${identifier}" =~ ^0[0-9]+$ ]]; then
-                echo "Identificadores numÃ©ricos de prÃ©-lanÃ§amento nÃ£o podem ter zero Ã  esquerda."
+                echo "Identificadores numéricos de pré-lançamento não podem ter zero à esquerda."
                 exit 1
               fi
             done
           fi
-      - name: Verificar mÃ³dulos
+      - name: Verificar módulos
         run: go mod verify
-      - name: Run gofmt
-        run: |
-          echo 'Running gofmt to autoformat source'
-          gofmt -l . || true
-          gofmt -w . || true
-      - name: Verificar formataÃ§Ã£o
+      - name: Verificar formatação
         shell: bash
         run: |
           unformatted="$(gofmt -l .)"
@@ -64,7 +59,7 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - name: Analisar cÃ³digo
+      - name: Analisar código
         run: |
           go vet ./...
           go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
@@ -103,7 +98,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
       - name: Compilar e empacotar
@@ -183,4 +178,3 @@ jobs:
             --generate-notes \
             "${release_flags[@]}" \
             --title "SubdomainAbber ${GITHUB_REF_NAME}"
-

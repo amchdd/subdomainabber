@@ -1,0 +1,39 @@
+name: Benchmarks sintéticos e de regressão
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Executar benchmarks locais
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Verificar módulos
+        run: go mod verify
+      - name: Validar assinaturas embarcadas
+        run: go run . fingerprints validate --strict
+      - name: Benchmark sintético
+        run: go run . benchmark synthetic
+      - name: Benchmark de regressão
+        run: go run . benchmark regression datasets/regression
+      - name: Benchmark do mutator
+        run: go run . benchmark mutator

@@ -14,7 +14,7 @@ Descreva o problema e a solução.
 - [ ] `go fmt ./...`
 - [ ] `go mod verify`
 - [ ] `go vet ./...`
-- [ ] `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/ci.yml .github/workflows/release.yml`
+- [ ] `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml`
 - [ ] `go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...`
 - [ ] `go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...`
 - [ ] `go test ./... -count=1`
