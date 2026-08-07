@@ -20,6 +20,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Alterado
 
+- licenciamento do código original alterado de MIT para MIT com a Commons Clause License Condition v1.0; `v0.1.0-alpha` e versões anteriores permanecem sob MIT;
 - dependências Go diretas atualizadas e ambiente de execução mínimo elevado para Go 1.26.5;
 - AWS Smithy, Cobra e dependências transitivas Go atualizadas;
 - ações `checkout` e `setup-go` do GitHub Actions atualizadas para a v7;
