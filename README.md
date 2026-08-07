@@ -4,7 +4,7 @@
 [![Go CI](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml/badge.svg)](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-SubdomainAbber é uma ferramenta de varredura em Go para investigar possíveis casos de takeover de subdomínio em programas de bug bounty e avaliações de segurança autorizadas. Ela correlaciona DNS, HTTP e TLS, registra evidências reproduzíveis e mantém um histórico local em SQLite.
+Subdomainabber é uma ferramenta de varredura em Go para investigar possíveis casos de takeover de subdomínio em programas de bug bounty e avaliações de segurança autorizadas. Ela correlaciona DNS, HTTP e TLS, registra evidências reproduzíveis e mantém um histórico local em SQLite.
 
 > **Versão alpha:** `v0.1.0-alpha` ainda pode alterar opções de linha de comando, o formato do banco e os critérios de classificação. Todo resultado exige validação manual antes de ser relatado.
 
