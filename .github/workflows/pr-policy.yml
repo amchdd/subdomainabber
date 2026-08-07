@@ -20,14 +20,20 @@ jobs:
       BASE_REF: ${{ github.base_ref }}
       HEAD_REF: ${{ github.head_ref }}
       PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
     steps:
       - name: Validar política do repositório
         shell: bash
         run: |
           set -euo pipefail
 
+          is_dependabot=false
+          if [[ "${PR_AUTHOR}" == "dependabot[bot]" && "${HEAD_REF}" == dependabot/* ]]; then
+            is_dependabot=true
+          fi
+
           title_pattern='^(feat|fix|docs|refactor|test|ci|build|perf|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
-          if [[ ! "${PR_TITLE}" =~ ${title_pattern} ]]; then
+          if [[ "${is_dependabot}" != "true" && ! "${PR_TITLE}" =~ ${title_pattern} ]]; then
             echo "O título deve seguir Conventional Commits."
             echo "Exemplo: feat(dns): adicionar evidência DNSSEC"
             exit 1
@@ -35,8 +41,12 @@ jobs:
 
           case "${BASE_REF}" in
             main)
-              if [[ "${HEAD_REF}" != "dev" && "${HEAD_REF}" != hotfix/* ]]; then
-                echo "Pull requests para main devem partir de dev ou hotfix/*."
+              if [[ "${HEAD_REF}" == "dev" || "${HEAD_REF}" == hotfix/* ]]; then
+                :
+              elif [[ "${is_dependabot}" == "true" ]]; then
+                :
+              else
+                echo "Pull requests para main devem partir de dev, hotfix/* ou de uma branch dependabot/* criada pelo dependabot[bot]."
                 exit 1
               fi
               ;;
@@ -53,6 +63,11 @@ jobs:
                     "${HEAD_REF}" != hotfix/* && \
                     "${HEAD_REF}" != dependabot/* ]]; then
                 echo "A branch de origem não segue a convenção documentada."
+                exit 1
+              fi
+
+              if [[ "${HEAD_REF}" == dependabot/* && "${is_dependabot}" != "true" ]]; then
+                echo "Somente o dependabot[bot] pode usar o prefixo dependabot/*."
                 exit 1
               fi
               ;;
