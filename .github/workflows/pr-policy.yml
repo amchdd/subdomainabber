@@ -1,0 +1,63 @@
+name: Política de pull request
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validar branch e título
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      HEAD_REF: ${{ github.head_ref }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Validar política do repositório
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title_pattern='^(feat|fix|docs|refactor|test|ci|build|perf|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+          if [[ ! "${PR_TITLE}" =~ ${title_pattern} ]]; then
+            echo "O título deve seguir Conventional Commits."
+            echo "Exemplo: feat(dns): adicionar evidência DNSSEC"
+            exit 1
+          fi
+
+          case "${BASE_REF}" in
+            main)
+              if [[ "${HEAD_REF}" != "dev" && "${HEAD_REF}" != hotfix/* ]]; then
+                echo "Pull requests para main devem partir de dev ou hotfix/*."
+                exit 1
+              fi
+              ;;
+            dev)
+              if [[ "${HEAD_REF}" != feat/* && \
+                    "${HEAD_REF}" != fix/* && \
+                    "${HEAD_REF}" != docs/* && \
+                    "${HEAD_REF}" != refactor/* && \
+                    "${HEAD_REF}" != test/* && \
+                    "${HEAD_REF}" != ci/* && \
+                    "${HEAD_REF}" != build/* && \
+                    "${HEAD_REF}" != perf/* && \
+                    "${HEAD_REF}" != chore/* && \
+                    "${HEAD_REF}" != hotfix/* && \
+                    "${HEAD_REF}" != dependabot/* ]]; then
+                echo "A branch de origem não segue a convenção documentada."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Pull requests devem apontar para dev ou main."
+              exit 1
+              ;;
+          esac
