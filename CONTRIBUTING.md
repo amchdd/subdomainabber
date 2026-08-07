@@ -1,6 +1,6 @@
 # Como contribuir
 
-Obrigado por contribuir com o SubdomainAbber. O projeto prioriza evidência reproduzível, baixo ruído e uso autorizado.
+Obrigado por contribuir com o Subdomainabber. O projeto prioriza evidência reproduzível, baixo ruído e uso autorizado.
 
 ## Ambiente de desenvolvimento
 
