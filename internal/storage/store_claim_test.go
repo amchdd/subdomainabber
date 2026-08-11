@@ -100,8 +100,11 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 		t.Fatalf("perfil persistido incorretamente: %#v", hosts)
 	}
 	stored, err := store.GetHost(context.Background(), analysis.Host)
-	if err != nil || stored == nil || !reflect.DeepEqual(stored.Evidences, analysis.Evidences) {
-		t.Fatalf("consulta do host = %#v, %v", stored, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil || !reflect.DeepEqual(stored.Evidences, analysis.Evidences) || !reflect.DeepEqual(stored.ScanProfile, analysis.ScanProfile) {
+		t.Fatalf("host não recuperado pelo nome: %#v", stored)
 	}
 }
 

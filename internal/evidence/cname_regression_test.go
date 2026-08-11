@@ -67,3 +67,20 @@ func TestCNAMETransportFailureNeverBecomesDangling(t *testing.T) {
 		}
 	}
 }
+
+func TestCNAMEChainTraceKeepsTerminalNode(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.example.com",
+		DNS: core.DNSRecordSet{
+			CNAME: []string{"edge.example.net", "origin.example.net"},
+			A:     []string{"192.0.2.1"},
+		},
+	}
+	if err := NewCNAMECollector(nil, nil).Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	evidence, found := findEvidence(analysis, "CNAME_CHAIN_TRACE")
+	if !found || evidence.Metadata["terminal"] != "origin.example.net" || evidence.Metadata["terminal_status"] != "RESOLVED" {
+		t.Fatalf("rastreio incompleto: %+v", evidence)
+	}
+}

@@ -239,7 +239,7 @@ func TestFailedRoute53NameserverMatchDowngradesCandidate(t *testing.T) {
 }
 
 func TestBrokenNonCNAMEVectorsRemainMisconfigurations(t *testing.T) {
-	for _, evidenceType := range []string{"MX_BROKEN", "SRV_BROKEN", "SPF_BROKEN_INCLUDE"} {
+	for _, evidenceType := range []string{"MX_BROKEN", "MX_PRIMARY_BROKEN_WITH_FALLBACK", "MX_BACKUP_BROKEN", "SRV_BROKEN", "DNSSEC_BOGUS", "SPF_BROKEN_INCLUDE"} {
 		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType}}}
 		if got := Classify(analysis); got != LevelMisconfigured {
 			t.Fatalf("%s = %s", evidenceType, got)

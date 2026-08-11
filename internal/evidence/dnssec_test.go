@@ -9,7 +9,8 @@ import (
 )
 
 type fakeDNSSECResolver struct {
-	checked string
+	checked   string
+	diagnosis core.DNSSECDiagnosis
 }
 
 func (resolver *fakeDNSSECResolver) CheckDNSSEC(_ context.Context, zone string) (map[string]bool, error) {
@@ -19,6 +20,10 @@ func (resolver *fakeDNSSECResolver) CheckDNSSEC(_ context.Context, zone string) 
 
 func (resolver *fakeDNSSECResolver) FindAuthoritativeZone(_ context.Context, host string) (dns.AuthoritativeZone, error) {
 	return dns.AuthoritativeZone{Zone: "example.com"}, nil
+}
+
+func (resolver *fakeDNSSECResolver) DiagnoseDNSSEC(context.Context, string) (core.DNSSECDiagnosis, error) {
+	return resolver.diagnosis, nil
 }
 
 func TestDNSSECCollectorUsesDelegationZoneApex(t *testing.T) {
@@ -38,5 +43,18 @@ func TestDNSSECCollectorUsesDelegationZoneApex(t *testing.T) {
 	}
 	if analysis.Evidences[0].Type != "DNSSEC_ARTIFACTS_OBSERVED" || analysis.Evidences[0].IsNegative || analysis.Evidences[0].Weight != 0 {
 		t.Fatalf("artefatos DNSSEC foram tratados como validação: %+v", analysis.Evidences[0])
+	}
+}
+
+func TestDNSSECCollectorClassifiesBogus(t *testing.T) {
+	resolver := &fakeDNSSECResolver{diagnosis: core.DNSSECDiagnosis{
+		State: "BOGUS", NormalStatus: core.DNSStatusServFail, CDStatus: core.DNSStatusResolved,
+	}}
+	analysis := &core.HostAnalysis{Host: "broken.example.com"}
+	if err := NewDNSSECCollector(resolver).Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if !hasEvidenceType(analysis.Evidences, "DNSSEC_BOGUS") {
+		t.Fatalf("quebra DNSSEC não classificada: %+v", analysis.Evidences)
 	}
 }
