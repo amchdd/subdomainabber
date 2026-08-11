@@ -134,12 +134,18 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 		"CLOUD":            10,
 		"HTTP_MUTATOR":     10,
 		"HTTP_FRAMING_LAB": 10,
+		"SNI":              5,
+		"TLS_SAN_PIVOT":    5,
+		"ORIGIN_EXPOSURE":  5,
 	}
 	expected := map[string]bool{
 		"DNS": true, "HTTP": true, "TLS": true, "MX": true,
 		"TXT": true, "SRV": true, "A_AAAA_ASN": true, "CAA": true,
 	}
 	if profile != nil {
+		expected["SNI"] = profile.CheckSNI
+		expected["TLS_SAN_PIVOT"] = profile.PivotSAN
+		expected["ORIGIN_EXPOSURE"] = profile.CheckOrigin
 		expected["NS_DELEGATION"] = profile.CheckNS
 		expected["EMAIL"] = profile.CheckEmail
 		expected["SEC_HEADERS"] = profile.CheckHeaders

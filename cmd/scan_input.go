@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 
@@ -114,6 +115,91 @@ func validScanDomain(domain string) bool {
 		}
 	}
 	return tldHasLetter
+}
+
+func parseSANRoots(enabled bool, raw string) ([]string, error) {
+	if !enabled {
+		if strings.TrimSpace(raw) != "" {
+			return nil, fmt.Errorf("--san-roots exige --pivot-san")
+		}
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, fmt.Errorf("--pivot-san exige --san-roots: %w", err)
+	}
+	var roots []string
+	for _, item := range items {
+		host := strings.ToLower(strings.TrimSuffix(item, "."))
+		if !validScanDomain(host) || dns.ExtractRootDomain(host) != host {
+			return nil, fmt.Errorf("raiz SAN inválida: %q", item)
+		}
+		roots = append(roots, host)
+	}
+	return roots, nil
+}
+
+func parseOriginTargets(enabled bool, raw string) ([]string, error) {
+	if !enabled {
+		if strings.TrimSpace(raw) != "" {
+			return nil, fmt.Errorf("--origin-allowlist exige --check-origin")
+		}
+		return nil, nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, item := range items {
+		value := strings.ToLower(strings.TrimSuffix(item, "."))
+		if ip := net.ParseIP(value); ip != nil {
+			if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+				return nil, fmt.Errorf("IP de origin não público: %q", item)
+			}
+			targets = append(targets, ip.String())
+			continue
+		}
+		if !validScanDomain(value) {
+			return nil, fmt.Errorf("destino de origin inválido: %q", item)
+		}
+		targets = append(targets, value)
+	}
+	return targets, nil
+}
+
+func readList(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("a lista está vazia")
+	}
+	content := raw
+	if data, err := os.ReadFile(raw); err == nil {
+		content = string(data)
+	}
+	seen := make(map[string]struct{})
+	var items []string
+	for _, item := range strings.FieldsFunc(content, func(char rune) bool {
+		return char == ',' || char == '\n' || char == '\r'
+	}) {
+		item = strings.TrimSpace(item)
+		if item == "" || strings.HasPrefix(item, "#") {
+			continue
+		}
+		key := strings.ToLower(item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("a lista está vazia")
+	}
+	return items, nil
 }
 
 func aggressiveClaimTargets(enabled, confirmed bool, rawAllowlist string, scanDomains []string) ([]string, error) {

@@ -37,3 +37,16 @@ func TestCoverageIsRelativeToRequestedProfile(t *testing.T) {
 		t.Fatalf("cobertura com NS concluído = %.1f; esperado 100", got)
 	}
 }
+
+func TestCoverageIncludesTLSModules(t *testing.T) {
+	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA"}
+	profile := &core.ScanProfile{Version: 2, CheckSNI: true, PivotSAN: true, CheckOrigin: true}
+	analysis := &core.HostAnalysis{TestedVectors: vectors, ScanProfile: profile}
+	if got := Calculate(analysis).CoverageScore; got >= 100 {
+		t.Fatalf("módulos TLS ausentes não reduziram a cobertura: %.1f", got)
+	}
+	analysis.TestedVectors = append(analysis.TestedVectors, "SNI", "TLS_SAN_PIVOT", "ORIGIN_EXPOSURE")
+	if got := Calculate(analysis).CoverageScore; got != 100 {
+		t.Fatalf("cobertura TLS completa = %.1f", got)
+	}
+}

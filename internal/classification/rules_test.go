@@ -180,6 +180,17 @@ func TestContextOnlyEvidenceIsInsufficientRatherThanUnknown(t *testing.T) {
 	}
 }
 
+func TestOriginNeedsDirectConfirmation(t *testing.T) {
+	candidate := &core.HostAnalysis{Evidences: []core.Evidence{{Type: "ORIGIN_EXPOSURE_CANDIDATE"}}}
+	if got := Classify(candidate); got != LevelInsufficientEvidence {
+		t.Fatalf("candidato passivo = %s", got)
+	}
+	confirmed := &core.HostAnalysis{Evidences: []core.Evidence{{Type: "ORIGIN_DIRECT_MATCH"}}}
+	if got := Classify(confirmed); got != LevelExposed {
+		t.Fatalf("origin confirmado = %s", got)
+	}
+}
+
 func TestDelegationStateMachineDoesNotBecomeGenericTakeover(t *testing.T) {
 	tests := []struct{ evidenceType, want string }{
 		{"DELEGATION_BROKEN", LevelDelegationBroken},
