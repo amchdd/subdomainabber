@@ -66,6 +66,8 @@ type HostAnalysis struct {
 	CDN                string                     `json:"cdn,omitempty"`
 	Headers            map[string][]string        `json:"headers,omitempty"` // Apenas se --headers ativo
 	HTTPObservations   map[string]HTTPObservation `json:"http_observations,omitempty"`
+	Redirects          map[string]RedirectChain   `json:"redirects,omitempty"`
+	WebDependencies    []WebDependency            `json:"web_dependencies,omitempty"`
 	ProviderCandidates []ProviderCandidate        `json:"provider_candidates,omitempty"`
 	MutationResults    []MutationResult           `json:"mutation_results,omitempty"`
 	Delegation         *DelegationCandidate       `json:"delegation_candidate,omitempty"`
@@ -109,6 +111,8 @@ type ScanProfile struct {
 	CheckHeaders         bool     `json:"check_headers,omitempty"`
 	CheckShadowIT        bool     `json:"check_shadow_it,omitempty"`
 	CheckRedirects       bool     `json:"check_redirects,omitempty"`
+	CheckVHost           bool     `json:"check_vhost,omitempty"`
+	CheckWebDeps         bool     `json:"check_web_dependencies,omitempty"`
 	CheckEvasion         bool     `json:"check_evasion,omitempty"`
 	CheckFraming         bool     `json:"check_framing,omitempty"`
 	Aggressive           bool     `json:"aggressive,omitempty"`
@@ -116,6 +120,8 @@ type ScanProfile struct {
 	SRVOwners            []string `json:"srv_owners,omitempty"`
 	SRVExhaustive        bool     `json:"srv_exhaustive,omitempty"`
 	FollowRedirects      bool     `json:"follow_redirects,omitempty"`
+	RedirectDepth        int      `json:"redirect_depth,omitempty"`
+	RelatedHosts         []string `json:"related_hosts,omitempty"`
 	FetchHeaders         bool     `json:"fetch_headers,omitempty"`
 	UserAgent            string   `json:"user_agent,omitempty"`
 	RelatedImpactInScope bool     `json:"related_impact_in_scope,omitempty"`
@@ -172,6 +178,23 @@ func (h *HostAnalysis) HTTPObservation(scheme string) (HTTPObservation, bool) {
 	defer h.mu.Unlock()
 	observation, ok := h.HTTPObservations[scheme]
 	return cloneHTTPObservation(observation), ok
+}
+
+func (h *HostAnalysis) SetRedirectChain(scheme string, chain RedirectChain) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.Redirects == nil {
+		h.Redirects = make(map[string]RedirectChain)
+	}
+	h.Redirects[scheme] = chain
+}
+
+func (h *HostAnalysis) AddWebDependency(dependency WebDependency) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.WebDependencies = append(h.WebDependencies, dependency)
 }
 
 func (h *HostAnalysis) AddProviderCandidate(candidate ProviderCandidate) {

@@ -34,6 +34,8 @@ func Primary(analysis *core.HostAnalysis) Context {
 		"SRV_BROKEN", "SRV_DANGLING", "SRV_UNRESOLVABLE",
 		"SPF_DANGLING_TAKEOVER", "SPF_BROKEN_INCLUDE", "SPF_INCLUDE_WITHOUT_POLICY",
 		"SPF_LOOKUP_LIMIT_EXCEEDED", "SPF_INCLUDE_CYCLE",
+		"DANGLING_REDIRECT", "CSP_DANGLING_DEPENDENCY", "SUBRESOURCE_DANGLING", "DEAD_ASSET_REFERENCE", "DEAD_ASSET_HTTP",
+		"HTTPS_DOWNGRADE_REDIRECT", "HTTP_HTTPS_PORT_INCONSISTENT", "HTTP_HTTPS_REDIRECT_MISSING",
 		"HTTP_OPEN_REDIRECT", "SHADOW_IT_DETECTED",
 		"EMAIL_SPF_PERMISSIVE", "EMAIL_SPF_MISSING", "EMAIL_DMARC_MISSING",
 		"HTTP_HSTS_MISSING", "HTTP_CSP_MISSING",
@@ -98,7 +100,9 @@ func Primary(analysis *core.HostAnalysis) Context {
 		} else if selected.Metadata["owner"] != "" {
 			result.Resource = selected.Metadata["owner"]
 		}
-	case strings.HasPrefix(selected.Type, "HTTP_"):
+	case strings.HasPrefix(selected.Type, "HTTP_") || selected.Type == "DANGLING_REDIRECT" ||
+		selected.Type == "HTTPS_DOWNGRADE_REDIRECT" || strings.Contains(selected.Type, "DEPENDENCY") ||
+		strings.HasPrefix(selected.Type, "SUBRESOURCE_") || strings.HasPrefix(selected.Type, "DEAD_ASSET_"):
 		result.Vector = "HTTP"
 	case strings.HasPrefix(selected.Type, "TLS_"):
 		result.Vector = "TLS"

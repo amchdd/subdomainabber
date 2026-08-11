@@ -154,7 +154,7 @@ func (e *Engine) profileCompatibilityError(profile *core.ScanProfile) string {
 	if profile == nil || profile.Version == 0 {
 		return "o registro foi criado antes da persistência do perfil; execute uma nova varredura antes de revalidar"
 	}
-	if profile.Version != 1 {
+	if profile.Version != 1 && profile.Version != 2 {
 		return fmt.Sprintf("a versão %d do perfil histórico não é suportada", profile.Version)
 	}
 	if profile.SignatureDigest == "" || profile.SignatureDigest != e.signatureDigest {
@@ -194,6 +194,7 @@ func cloneProfile(profile *core.ScanProfile) *core.ScanProfile {
 	}
 	clone := *profile
 	clone.SRVOwners = append([]string(nil), profile.SRVOwners...)
+	clone.RelatedHosts = append([]string(nil), profile.RelatedHosts...)
 	return &clone
 }
 

@@ -180,6 +180,28 @@ func TestContextOnlyEvidenceIsInsufficientRatherThanUnknown(t *testing.T) {
 	}
 }
 
+func TestWebFindingsStayMisconfigured(t *testing.T) {
+	for _, evidenceType := range []string{
+		"DANGLING_REDIRECT", "HTTPS_DOWNGRADE_REDIRECT", "CSP_DANGLING_DEPENDENCY", "DEAD_ASSET_HTTP",
+	} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Weight: 20, Confidence: 90}}}
+		if got := Classify(analysis); got != LevelMisconfigured {
+			t.Fatalf("%s foi classificado como %s", evidenceType, got)
+		}
+	}
+}
+
+func TestWebContextDoesNotCreateFinding(t *testing.T) {
+	for _, evidenceType := range []string{
+		"HTTP_REDIRECT_HOP", "REDIRECT_TARGET_OUT_OF_SCOPE", "VHOST_DIFFERENTIAL", "HTTP_WILDCARD_DETECTED",
+	} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Confidence: 100}}}
+		if got := Classify(analysis); got != LevelInsufficientEvidence {
+			t.Fatalf("%s foi classificado como %s", evidenceType, got)
+		}
+	}
+}
+
 func TestDelegationStateMachineDoesNotBecomeGenericTakeover(t *testing.T) {
 	tests := []struct{ evidenceType, want string }{
 		{"DELEGATION_BROKEN", LevelDelegationBroken},

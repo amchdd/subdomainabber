@@ -83,7 +83,8 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 		Classification: "UNKNOWN",
 		TestedVectors:  []string{"DNS", "HTTP", "TLS"},
 		ScanProfile: &core.ScanProfile{
-			Version: 1, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
+			Version: 2, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
+			FollowRedirects: true, RedirectDepth: 7, RelatedHosts: []string{"static.example.com"}, CheckWebDeps: true,
 		},
 	}
 	if err := store.SaveAnalysis(analysis); err != nil {

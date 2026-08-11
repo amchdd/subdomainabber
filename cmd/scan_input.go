@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/dns"
+	"github.com/amchdd/subdomainabber/internal/domainutil"
 )
 
 const maxScanInputLine = 1024 * 1024
@@ -114,6 +115,40 @@ func validScanDomain(domain string) bool {
 		}
 	}
 	return tldHasLetter
+}
+
+func parseRelatedHosts(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	content := raw
+	if data, err := os.ReadFile(raw); err == nil {
+		content = string(data)
+	}
+	seen := make(map[string]struct{})
+	var hosts []string
+	for _, item := range strings.FieldsFunc(content, func(char rune) bool {
+		return char == ',' || char == '\n' || char == '\r'
+	}) {
+		host := strings.TrimSpace(item)
+		if host == "" || strings.HasPrefix(host, "#") {
+			continue
+		}
+		normalized, err := domainutil.NormalizeHostname(host)
+		if err != nil || !validScanDomain(normalized) {
+			return nil, fmt.Errorf("host relacionado inválido: %q", item)
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		hosts = append(hosts, normalized)
+	}
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("a lista de hosts relacionados está vazia")
+	}
+	return hosts, nil
 }
 
 func aggressiveClaimTargets(enabled, confirmed bool, rawAllowlist string, scanDomains []string) ([]string, error) {

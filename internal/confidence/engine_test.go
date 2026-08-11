@@ -37,3 +37,16 @@ func TestCoverageIsRelativeToRequestedProfile(t *testing.T) {
 		t.Fatalf("cobertura com NS concluído = %.1f; esperado 100", got)
 	}
 }
+
+func TestCoverageIncludesWebModules(t *testing.T) {
+	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA"}
+	profile := &core.ScanProfile{Version: 2, FollowRedirects: true, CheckVHost: true, CheckWebDeps: true}
+	analysis := &core.HostAnalysis{TestedVectors: vectors, ScanProfile: profile}
+	if got := Calculate(analysis).CoverageScore; got >= 100 {
+		t.Fatalf("módulos web ausentes não reduziram a cobertura: %.1f", got)
+	}
+	analysis.TestedVectors = append(analysis.TestedVectors, "HTTP_POSTURE", "REDIRECT_CHAIN", "VHOST", "WEB_DEPENDENCIES")
+	if got := Calculate(analysis).CoverageScore; got != 100 {
+		t.Fatalf("cobertura web completa = %.1f", got)
+	}
+}
