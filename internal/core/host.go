@@ -68,6 +68,9 @@ type HostAnalysis struct {
 	HTTPObservations   map[string]HTTPObservation `json:"http_observations,omitempty"`
 	Redirects          map[string]RedirectChain   `json:"redirects,omitempty"`
 	WebDependencies    []WebDependency            `json:"web_dependencies,omitempty"`
+	TLS                *TLSObservation            `json:"tls,omitempty"`
+	SNIVariants        []TLSObservation           `json:"sni_variants,omitempty"`
+	SANCandidates      []string                   `json:"san_candidates,omitempty"`
 	ProviderCandidates []ProviderCandidate        `json:"provider_candidates,omitempty"`
 	MutationResults    []MutationResult           `json:"mutation_results,omitempty"`
 	Delegation         *DelegationCandidate       `json:"delegation_candidate,omitempty"`
@@ -91,10 +94,11 @@ type HostAnalysis struct {
 	VerificationScore  int                 `json:"verification_score"` // 100 = provado, 0 = sem verificação/falhou
 	ActiveVerification *VerificationResult `json:"active_verification,omitempty"`
 
-	FirstSeen              time.Time `json:"first_seen"`
-	LastSeen               time.Time `json:"last_seen"`
-	PreviousClassification string    `json:"previous_classification"`
-	LastStateChange        time.Time `json:"last_state_change"`
+	FirstSeen              time.Time  `json:"first_seen"`
+	LastSeen               time.Time  `json:"last_seen"`
+	PreviousClassification string     `json:"previous_classification"`
+	LastStateChange        time.Time  `json:"last_state_change"`
+	PreviousEvidences      []Evidence `json:"-"`
 }
 
 // ScanProfile registra apenas opções reproduzíveis e não secretas da coleta.
@@ -113,6 +117,11 @@ type ScanProfile struct {
 	CheckRedirects       bool     `json:"check_redirects,omitempty"`
 	CheckVHost           bool     `json:"check_vhost,omitempty"`
 	CheckWebDeps         bool     `json:"check_web_dependencies,omitempty"`
+	CheckSNI             bool     `json:"check_sni,omitempty"`
+	PivotSAN             bool     `json:"pivot_san,omitempty"`
+	SANRoots             []string `json:"san_roots,omitempty"`
+	CheckOrigin          bool     `json:"check_origin,omitempty"`
+	OriginTargets        []string `json:"origin_targets,omitempty"`
 	CheckEvasion         bool     `json:"check_evasion,omitempty"`
 	CheckFraming         bool     `json:"check_framing,omitempty"`
 	Aggressive           bool     `json:"aggressive,omitempty"`
@@ -195,6 +204,35 @@ func (h *HostAnalysis) AddWebDependency(dependency WebDependency) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.WebDependencies = append(h.WebDependencies, dependency)
+}
+
+func (h *HostAnalysis) SetTLS(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	copy := observation
+	copy.SANs = append([]string(nil), observation.SANs...)
+	h.TLS = &copy
+}
+
+func (h *HostAnalysis) AddSNIVariant(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	observation.SANs = append([]string(nil), observation.SANs...)
+	h.SNIVariants = append(h.SNIVariants, observation)
+}
+
+func (h *HostAnalysis) AddSANCandidate(host string) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, existing := range h.SANCandidates {
+		if existing == host {
+			return
+		}
+	}
+	h.SANCandidates = append(h.SANCandidates, host)
 }
 
 func (h *HostAnalysis) AddProviderCandidate(candidate ProviderCandidate) {

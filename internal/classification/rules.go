@@ -111,7 +111,7 @@ func Classify(analysis *core.HostAnalysis) string {
 	}
 
 	// Exposições de dados ou de configurações em nuvem não comprovam takeover.
-	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") {
+	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") || has("ORIGIN_DIRECT_MATCH") {
 		return LevelExposed
 	}
 
@@ -179,9 +179,15 @@ func hasOnlyContextEvidence(evidences []core.Evidence) bool {
 		"NULL_MX_PRESENT":              {},
 		"NS_PROVIDER_MATCH":            {},
 		"NXDOMAIN_EXPECTED":            {},
+		"ORIGIN_EXPOSURE_CANDIDATE":    {},
+		"ORIGIN_EXPOSURE_HINT":         {},
+		"SNI_CERT_MISMATCH":            {},
 		"SRV_PROVIDER_MATCH":           {},
 		"SHADOW_IT_DETECTED":           {},
+		"TLS_CERTIFICATE_DRIFT":        {},
+		"TLS_CERTIFICATE_OBSERVED":     {},
 		"TLS_PROVIDER_MATCH":           {},
+		"TLS_SAN_CANDIDATE":            {},
 		"TLS_SAN_MATCH":                {},
 		"TXT_VERIFICATION_TOKEN":       {},
 	}

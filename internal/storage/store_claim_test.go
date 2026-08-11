@@ -85,6 +85,8 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 		ScanProfile: &core.ScanProfile{
 			Version: 2, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
 			FollowRedirects: true, RedirectDepth: 7, RelatedHosts: []string{"static.example.com"}, CheckWebDeps: true,
+			CheckSNI: true, PivotSAN: true, SANRoots: []string{"example.com"}, CheckOrigin: true,
+			OriginTargets: []string{"203.0.113.10"},
 		},
 	}
 	if err := store.SaveAnalysis(analysis); err != nil {
@@ -96,6 +98,10 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 	}
 	if len(hosts) != 1 || !reflect.DeepEqual(hosts[0].TestedVectors, analysis.TestedVectors) || !reflect.DeepEqual(hosts[0].ScanProfile, analysis.ScanProfile) {
 		t.Fatalf("perfil persistido incorretamente: %#v", hosts)
+	}
+	stored, err := store.GetHost(context.Background(), analysis.Host)
+	if err != nil || stored == nil || !reflect.DeepEqual(stored.Evidences, analysis.Evidences) {
+		t.Fatalf("consulta do host = %#v, %v", stored, err)
 	}
 }
 
