@@ -124,6 +124,14 @@ func Value(value string) string {
 		return "ERRO"
 	case "PROVIDER_OWNED":
 		return "PERTENCE AO PROVEDOR"
+	case "PRIMARY":
+		return "PRIMÁRIO"
+	case "FALLBACK":
+		return "CONTINGÊNCIA"
+	case "POSSIBLY_RESIDUAL":
+		return "POSSIVELMENTE RESIDUAL"
+	case "RELATED_PROVIDER_PRESENT":
+		return "PROVEDOR RELACIONADO PRESENTE"
 	case "EXTERNAL_UNVERIFIED":
 		return "EXTERNO NÃO VERIFICADO"
 	case "NOT_TESTED":
@@ -173,6 +181,24 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o domínio possui registros MX, mas não publica uma política SPF"
 	case "HTTP_OPEN_REDIRECT":
 		return "o host aceitou um redirecionamento para destino externo"
+	case "DNSSEC_BOGUS":
+		return "a validação DNSSEC falha, mas a consulta com verificação desabilitada recebe resposta"
+	case "DNSSEC_SERVFAIL_INCONCLUSIVE":
+		return "a consulta retorna SERVFAIL mesmo sem validação DNSSEC; a causa permanece inconclusiva"
+	case "MX_PRIMARY_BROKEN_WITH_FALLBACK":
+		return "o MX prioritário falhou, mas há um destino alternativo resolvível"
+	case "MX_BACKUP_BROKEN":
+		return "um MX de contingência falhou enquanto outro destino continua resolvível"
+	case "CAA_POLICY_INCONSISTENT":
+		return "as políticas CAA do hostname e da zona registrável divergem"
+	case "CAA_ISSUER_MISMATCH":
+		return "o emissor do certificado observado não aparece na política CAA efetiva"
+	case "TXT_OWNERSHIP_TOKEN_RESIDUAL":
+		return "o token de propriedade pode ser residual; isso não comprova vínculo nem exploração"
+	case "PROVIDER_MIGRATION_DETECTED":
+		return "o provedor observado mudou desde a varredura anterior"
+	case "PROVIDER_MIGRATION_STALE_REFERENCE":
+		return "a referência ao provedor anterior permanece após a migração"
 	default:
 		return evidence.Description
 	}

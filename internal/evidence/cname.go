@@ -3,6 +3,7 @@ package evidence
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/internal/dns"
@@ -105,10 +106,28 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 		}
 	}
 
-	// Verifica se o destino final da cadeia possui endereços IP.
-	if danglingNode != "" && len(analysis.DNS.A) == 0 && len(analysis.DNS.AAAA) == 0 {
-		// Consulta o último nó para preservar o estado DNS exato.
-		status := c.resolver.ResolveAddressStatus(ctx, danglingNode)
+	if danglingNode == "" {
+		return nil
+	}
+	status := core.DNSStatusResolved
+	missingAddress := len(analysis.DNS.A) == 0 && len(analysis.DNS.AAAA) == 0
+	if missingAddress {
+		status = core.DNSStatusError
+		if c.resolver != nil {
+			status = c.resolver.ResolveAddressStatus(ctx, danglingNode)
+		}
+	}
+	analysis.AddEvidence(core.Evidence{
+		Type: "CNAME_CHAIN_TRACE", Source: "DNS",
+		Description: "A cadeia CNAME foi percorrida até o destino terminal.",
+		Weight:      0, Confidence: 100,
+		Metadata: map[string]string{
+			"chain": strings.Join(analysis.DNS.CNAME, " -> "), "terminal": danglingNode,
+			"chain_length": fmt.Sprintf("%d", len(analysis.DNS.CNAME)), "terminal_status": string(status),
+		},
+	})
+
+	if missingAddress {
 
 		evType, desc, weight, evidenceConfidence := cnameResolutionEvidence(status, matchedProvider)
 

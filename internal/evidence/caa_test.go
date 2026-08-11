@@ -1,0 +1,49 @@
+package evidence
+
+import (
+	"context"
+	"testing"
+
+	"github.com/amchdd/subdomainabber/internal/core"
+)
+
+type fakeCAAResolver struct {
+	records []string
+}
+
+func (resolver fakeCAAResolver) ResolveCAA(context.Context, string) ([]string, error) {
+	return append([]string(nil), resolver.records...), nil
+}
+
+func TestCAAComparesZoneAndIssuer(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.example.com",
+		DNS:  core.DNSRecordSet{CAA: []string{"issue digicert.com"}},
+		Evidences: []core.Evidence{{Type: "TLS_SAN_MATCH", Metadata: map[string]string{
+			"tls_issuer": "Let's Encrypt R11",
+		}}},
+	}
+	collector := NewCAACollector(fakeCAAResolver{records: []string{"issue letsencrypt.org"}})
+
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	for _, evidenceType := range []string{"CAA_POLICY_INCONSISTENT", "CAA_ISSUER_MISMATCH"} {
+		if !hasEvidenceType(analysis.Evidences, evidenceType) {
+			t.Fatalf("%s ausente: %+v", evidenceType, analysis.Evidences)
+		}
+	}
+}
+
+func TestCAAAllowsObservedIssuer(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "example.com", DNS: core.DNSRecordSet{CAA: []string{"issue letsencrypt.org"}},
+		Evidences: []core.Evidence{{Metadata: map[string]string{"tls_issuer": "Let's Encrypt R11"}}},
+	}
+	if err := NewCAACollector().Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "CAA_ISSUER_MISMATCH") {
+		t.Fatalf("issuer permitido foi marcado como inconsistente: %+v", analysis.Evidences)
+	}
+}

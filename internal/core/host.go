@@ -14,6 +14,7 @@ type DNSRecordSet struct {
 	CNAME      []string    `json:"cname"` // Cadeia resolvida.
 	NS         []string    `json:"ns"`
 	MX         []string    `json:"mx"`
+	MXRecords  []MXRecord  `json:"mx_records,omitempty"`
 	TXT        []string    `json:"txt"`
 	SRV        []string    `json:"srv"`
 	SRVRecords []SRVRecord `json:"srv_records,omitempty"`
@@ -89,10 +90,11 @@ type HostAnalysis struct {
 	VerificationScore  int                 `json:"verification_score"` // 100 = provado, 0 = sem verificação/falhou
 	ActiveVerification *VerificationResult `json:"active_verification,omitempty"`
 
-	FirstSeen              time.Time `json:"first_seen"`
-	LastSeen               time.Time `json:"last_seen"`
-	PreviousClassification string    `json:"previous_classification"`
-	LastStateChange        time.Time `json:"last_state_change"`
+	FirstSeen              time.Time  `json:"first_seen"`
+	LastSeen               time.Time  `json:"last_seen"`
+	PreviousClassification string     `json:"previous_classification"`
+	LastStateChange        time.Time  `json:"last_state_change"`
+	PreviousEvidences      []Evidence `json:"-"`
 }
 
 // ScanProfile registra apenas opções reproduzíveis e não secretas da coleta.

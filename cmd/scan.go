@@ -377,7 +377,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	srvCollector := evidence.NewSRVCollector(res, allSignatures)
 	tlsCollector := evidence.NewTLSCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second)
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
-	caaCollector := evidence.NewCAACollector()
+	caaCollector := evidence.NewCAACollector(res)
 	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, cfg.FollowRedirects, cfg.UserAgent, cfg.FetchHeaders)
 	if err := httpCollector.Validate(); err != nil {
 		return fmt.Errorf("configurando o coletor HTTP: %w", err)
@@ -400,6 +400,8 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		httpCollector,
 		cookieCollector,
 		corsCollector,
+		evidence.NewTXTResidualCollector(),
+		evidence.NewProviderHistoryCollector(),
 	}
 	if cfg.CheckNS {
 		collectors = append(collectors, nsCollector)
@@ -739,7 +741,7 @@ func parseFramingAllowlist(raw string) ([]string, error) {
 
 func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanProfile {
 	profile := &core.ScanProfile{
-		Version:         1,
+		Version:         2,
 		SignatureDigest: signatureDigest,
 		CheckNS:         cfg != nil && cfg.CheckNS,
 		CheckCloud:      checkCloud,
@@ -842,6 +844,14 @@ func processDomain(
 		DNS:            dnsRecords,
 		Classification: "UNKNOWN",
 		ScanProfile:    cloneScanProfile(scanProfile),
+	}
+	previous, loadErr := db.GetHost(ctx, domain)
+	if loadErr != nil {
+		debugLog.Printf("Erro ao carregar histórico de %s: %v", domain, loadErr)
+		return domainResult{Outcome: domainFailed}
+	}
+	if previous != nil {
+		analysis.PreviousEvidences = append([]core.Evidence(nil), previous.Evidences...)
 	}
 	if analysis.ScanProfile != nil {
 		_, analysis.ScanProfile.RelatedImpactInScope = explicitRoots[dns.ExtractRootDomain(domain)]

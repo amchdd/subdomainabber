@@ -125,8 +125,10 @@ func buildVerificationRuntime(
 	collectors = append(collectors,
 		tlsCollector,
 		evidence.NewIPCollector(resolver, allSignatures),
-		evidence.NewCAACollector(),
+		evidence.NewCAACollector(resolver),
 		httpCollector,
+		evidence.NewTXTResidualCollector(),
+		evidence.NewProviderHistoryCollector(),
 	)
 
 	if profile != nil && profile.RelatedImpactInScope {
