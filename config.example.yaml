@@ -17,6 +17,7 @@ proxy: ""
 check_ns: false
 no_wildcard_filter: false
 follow_redirects: false
+redirect_depth: 10
 user_agent: SubdomainAbber/v0.1.0-alpha
 doh: ""
 headers: false

@@ -12,10 +12,16 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	previousEvasion := checkEvasion
 	previousFraming := checkFraming
 	previousAggressive := aggressive
+	previousVHost := checkVHost
+	previousWebDeps := checkWebDeps
+	previousFollow := followRedirects
 	t.Cleanup(func() {
 		checkEvasion = previousEvasion
 		checkFraming = previousFraming
 		aggressive = previousAggressive
+		checkVHost = previousVHost
+		checkWebDeps = previousWebDeps
+		followRedirects = previousFollow
 	})
 	checkEvasion = false
 	checkFraming = false
@@ -30,6 +36,9 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 	if aggressive {
 		t.Fatal("--check-all enabled real auto-claim")
+	}
+	if !checkVHost || !checkWebDeps || !followRedirects {
+		t.Fatal("--check-all não habilitou as análises HTTP seguras")
 	}
 }
 

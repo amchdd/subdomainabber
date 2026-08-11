@@ -8,6 +8,7 @@ func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	t.Setenv("SABBER_AWS_SESSION_TOKEN", "temporary-session")
 	t.Setenv("SABBER_AWS_REGION", "sa-east-1")
 	t.Setenv("SABBER_FOLLOW_REDIRECTS", "true")
+	t.Setenv("SABBER_REDIRECT_DEPTH", "7")
 	t.Setenv("SABBER_FETCH_HEADERS", "true")
 	t.Setenv("SABBER_USER_AGENT", "SubdomainAbber/config-test")
 	t.Setenv("SABBER_DISCORD_MIN_SEVERITY", "high")
@@ -20,7 +21,7 @@ func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	if cfg.AwsAccessKey != "temporary-access" || cfg.AwsSecretKey != "temporary-secret" || cfg.AwsSessionToken != "temporary-session" || cfg.AwsRegion != "sa-east-1" {
 		t.Fatalf("AWS environment was not applied: %#v", cfg)
 	}
-	if !cfg.FollowRedirects || !cfg.FetchHeaders || cfg.UserAgent != "SubdomainAbber/config-test" {
+	if !cfg.FollowRedirects || cfg.RedirectDepth != 7 || !cfg.FetchHeaders || cfg.UserAgent != "SubdomainAbber/config-test" {
 		t.Fatalf("HTTP environment was not applied: %#v", cfg)
 	}
 	if cfg.DiscordMinSeverity != "high" || !cfg.NoColor {

@@ -173,6 +173,20 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o domínio possui registros MX, mas não publica uma política SPF"
 	case "HTTP_OPEN_REDIRECT":
 		return "o host aceitou um redirecionamento para destino externo"
+	case "DANGLING_REDIRECT":
+		return "a cadeia termina em um hostname inexistente ou recurso removido"
+	case "HTTP_HTTPS_REDIRECT_MISSING":
+		return "o endpoint HTTP não faz upgrade direto para HTTPS no mesmo hostname"
+	case "HTTP_HTTPS_PORT_INCONSISTENT":
+		return "o upgrade redireciona para uma porta HTTPS não convencional"
+	case "HTTPS_DOWNGRADE_REDIRECT":
+		return "o endpoint HTTPS redireciona para HTTP"
+	case "CSP_DANGLING_DEPENDENCY":
+		return "a política CSP confia em um host órfão vinculado a provedor conhecido"
+	case "SUBRESOURCE_DANGLING", "DEAD_ASSET_REFERENCE":
+		return "a página referencia um recurso em host órfão vinculado a provedor conhecido"
+	case "DEAD_ASSET_HTTP":
+		return "a página referencia um asset que responde como removido"
 	default:
 		return evidence.Description
 	}

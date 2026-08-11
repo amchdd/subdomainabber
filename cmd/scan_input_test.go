@@ -54,6 +54,19 @@ func TestValidScanDomainSupportsDNSLabelsButRejectsOutOfScopeSyntax(t *testing.T
 	}
 }
 
+func TestParseRelatedHosts(t *testing.T) {
+	hosts, err := parseRelatedHosts("Static.Example.com.,api.example.com,static.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 2 || hosts[0] != "static.example.com" || hosts[1] != "api.example.com" {
+		t.Fatalf("hosts inesperados: %#v", hosts)
+	}
+	if _, err := parseRelatedHosts("https://outside.example"); err == nil {
+		t.Fatal("URL foi aceita como hostname relacionado")
+	}
+}
+
 func TestAggressiveAutoClaimRequiresConfirmationAndExactScanAllowlist(t *testing.T) {
 	domains := []string{"bucket.example.com", "other.example.com"}
 	if _, err := aggressiveClaimTargets(true, false, "bucket.example.com", domains); err == nil {
