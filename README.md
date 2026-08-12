@@ -23,6 +23,7 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 - oferece saída em texto, JSON Lines e modos de explicação;
 - roteia verificadores ativos somente para provedores e CNAMEs compatíveis;
 - permite módulos ativos opcionais para exposição em nuvem, AXFR, redirecionamentos e outras verificações;
+- registra cadeias de redirecionamento, compara vhosts e correlaciona CSP e subrecursos HTML com seus destinos DNS;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
 - oferece reivindicações reais e auditáveis para o Amazon S3 e o Amazon Route 53 no modo agressivo, com prova de controle e tentativa imediata de liberação.
 
@@ -36,6 +37,7 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 | SRV | preserva nome, prioridade, peso, porta e destino, além de oferecer enumeração controlada por `--check-srv` |
 | TXT/SPF | observa tokens TXT sem declarar obsolescência; SPF mantém a cadeia e usa o RCODE DNS real |
 | A/AAAA | correlaciona ASN e provedor de nuvem e produz somente um candidato para revisão quando há sinais adicionais; portas fechadas não provam IP desalocado |
+| HTTP | preserva cada hop da cadeia, identifica destinos sem resolução, compara backend padrão e correlaciona dependências CSP/HTML |
 | AXFR | tratado como exposição de informação, nunca como controle da zona |
 
 Delegações seguem estados próprios: `DELEGATION_BROKEN`, `DELEGATION_TAKEOVER_CANDIDATE`, `DELEGATION_CLAIMABILITY_VERIFIED` e `ZONE_CONTROL_CONFIRMED`. A implementação passiva produz apenas os dois primeiros; o adaptador do Amazon Route 53 pode produzir o último por criação temporária e correspondência exata do conjunto de NS.
@@ -154,6 +156,9 @@ As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização con
 | `--check-ns` | Ativa o catálogo de NS orientado a provedores; o modo passivo gera um candidato e `--aggressive` pode provar Amazon Route 53 por correspondência exata. |
 | `--check-srv [--srv-owners ...]` | Enumera nomes comuns (`_sip._tcp`, `_autodiscover._tcp` etc.) uma vez por domínio registrável ou usa uma lista controlada. Nomes SRV recebidos diretamente também são analisados. |
 | `--srv-exhaustive` | Com `--check-srv`, repete a enumeração em cada nome de host. É mais lento e só deve ser usado quando o escopo realmente possui zonas SRV em subdomínios arbitrários. |
+| `--follow-redirects [--redirect-depth N]` | Registra cada hop da cadeia e classifica destinos sem DNS ou recursos removidos. O limite aceito é de 1 a 20. |
+| `--check-vhost` | Compara a linha de base com valores benignos de `Host` para identificar wildcard HTTP e backend padrão. |
+| `--check-web-deps --related-hosts ...` | Extrai referências de CSP e HTML, segue CNAME e verifica o estado DNS dos hosts relacionados. |
 | `--evasion` | Executa cinco sondas HTTP brutas de requisição única somente quando a linha de base aparenta bloqueio. Não executa CL.TE/TE.CL. |
 | `--whois-pivot --whois-pivot-confirm --whois-pivot-allowlist ...` | Descobre domínios relacionados por WHOIS e só inclui na varredura os domínios registráveis presentes na lista permitida. A confirmação não substitui a leitura do escopo do programa. |
 | `--check-framing` | Laboratório CL.TE/TE.CL de risco elevado. Exige também confirmação e lista de permissões controlada. |

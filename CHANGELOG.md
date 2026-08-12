@@ -9,6 +9,9 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Adicionado
 
+- análise de cadeias HTTP com evidência por hop, limite configurável e detecção de destino sem resolução ou recurso removido;
+- comparação de vhost para identificar wildcard HTTP e backend padrão;
+- correlação de CSP e subrecursos HTML com CNAME, estado DNS, provedor e resposta de assets relacionados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
