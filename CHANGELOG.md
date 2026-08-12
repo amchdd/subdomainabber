@@ -9,6 +9,10 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Adicionado
 
+- análise recursiva de CNAME com detecção de ciclos, preservação da cadeia e avaliação do nó terminal;
+- raciocínio de fallback MX, seguimento de CNAME em destinos SRV e correlação entre CAA e emissor TLS;
+- classificação de falhas DNSSEC e comparação histórica de certificados e provedores entre varreduras;
+- descoberta de tokens TXT residuais sem promover observação isolada a prova de controle;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
