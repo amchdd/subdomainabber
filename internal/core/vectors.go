@@ -25,6 +25,32 @@ const (
 	DNSStatusError    DNSStatus = "ERROR"
 )
 
+type ServiceBinding struct {
+	Priority uint16            `json:"priority"`
+	Target   string            `json:"target"`
+	Params   map[string]string `json:"params,omitempty"`
+}
+
+type DNAMERecord struct {
+	Owner  string `json:"owner"`
+	Target string `json:"target"`
+}
+
+type DNSView struct {
+	Resolver  string    `json:"resolver"`
+	Status    DNSStatus `json:"status"`
+	Answers   []string  `json:"answers,omitempty"`
+	TTL       uint32    `json:"ttl,omitempty"`
+	LatencyMs int64     `json:"latency_ms"`
+}
+
+type DNSConsensus struct {
+	QueryType string    `json:"query_type"`
+	State     string    `json:"state"`
+	Quorum    int       `json:"quorum"`
+	Views     []DNSView `json:"views"`
+}
+
 type DNSSECDiagnosis struct {
 	State         string    `json:"state"`
 	NormalStatus  DNSStatus `json:"normal_status"`

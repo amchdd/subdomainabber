@@ -111,6 +111,10 @@ func New(dbPath string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("criando esquema de auditorias de reivindicação: %w", err)
 	}
+	if err := createRunSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("criando esquema de execuções: %w", err)
+	}
 
 	if err := RunMigrations(db); err != nil {
 		db.Close()

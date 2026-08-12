@@ -92,6 +92,14 @@ func buildVerificationRuntime(
 	baseSignatures []signatures.Fingerprint,
 	db *storage.Store,
 ) (verificationRuntime, error) {
+	runtimeResolver := resolver.Clone()
+	if runtimeResolver == nil {
+		return verificationRuntime{}, fmt.Errorf("resolvedor ausente na revalidação")
+	}
+	runtimeResolver.SetConsensus(profile != nil && profile.DNSConsensus)
+	if profile != nil && profile.DNSConsensus && !runtimeResolver.ConsensusAvailable() {
+		return verificationRuntime{}, fmt.Errorf("a revalidação exige pelo menos dois resolvedores DNS clássicos e não aceita DoH")
+	}
 	allSignatures := append([]signatures.Fingerprint(nil), baseSignatures...)
 	if profile != nil && profile.CheckNS {
 		allSignatures = signatures.MergeSignatures(allSignatures, signatures.BuiltinNSSignatures())
@@ -103,14 +111,27 @@ func buildVerificationRuntime(
 
 	timeout := time.Duration(cfg.Timeout) * time.Second
 	collectors := []evidence.Collector{
-		evidence.NewCNAMECollector(resolver, allSignatures),
-		evidence.NewMXCollector(resolver, allSignatures),
+		evidence.NewCNAMECollector(runtimeResolver, allSignatures),
+		evidence.NewServiceBindingCollector(allSignatures),
+		evidence.NewMXCollector(runtimeResolver, allSignatures),
 		evidence.NewTXTCollector(allSignatures),
-		evidence.NewSRVCollector(resolver, allSignatures),
+		evidence.NewSRVCollector(runtimeResolver, allSignatures),
 	}
 	tlsCollector := evidence.NewTLSCollector(allSignatures, timeout)
-	if profile != nil && profile.Version >= 2 {
-		tlsCollector.EnableSNI(profile.CheckSNI)
+	if profile != nil {
+		switch {
+		case profile.Version >= 3:
+			tlsCollector.EnableSNI(profile.CheckSNI)
+			if profile.CheckSNI {
+				tlsCollector.EnableAlternateSNI(profile.AlternateSNI)
+			}
+		case profile.Version == 2:
+			tlsCollector.EnableSNI(profile.CheckSNI)
+			tlsCollector.EnableSANDiscovery(false)
+		default:
+			tlsCollector.EnableSNI(false)
+			tlsCollector.EnableSANDiscovery(false)
+		}
 		tlsCollector.SetSANRoots(profile.SANRoots)
 	}
 	tlsCollector.SetRequestLimiter(limiter)
@@ -128,8 +149,8 @@ func buildVerificationRuntime(
 	httpCollector.SetRequestLimiter(limiter)
 	collectors = append(collectors,
 		tlsCollector,
-		evidence.NewIPCollector(resolver, allSignatures),
-		evidence.NewCAACollector(resolver),
+		evidence.NewIPCollector(runtimeResolver, allSignatures),
+		evidence.NewCAACollector(runtimeResolver),
 		httpCollector,
 		evidence.NewTXTResidualCollector(),
 		evidence.NewProviderHistoryCollector(),
@@ -137,7 +158,7 @@ func buildVerificationRuntime(
 	if profile != nil && profile.Version >= 2 {
 		collectors = append(collectors, evidence.NewHTTPPostureCollector())
 		if profile.FollowRedirects {
-			redirects := evidence.NewRedirectCollector(resolver, sharedClient, profile.RedirectDepth)
+			redirects := evidence.NewRedirectCollector(runtimeResolver, sharedClient, profile.RedirectDepth)
 			redirects.SetAllowedHosts(profile.RelatedHosts)
 			collectors = append(collectors, redirects)
 		}
@@ -145,8 +166,8 @@ func buildVerificationRuntime(
 			collectors = append(collectors, evidence.NewVHostCollector(sharedClient))
 		}
 		if profile.CheckWebDeps {
-			deps := evidence.NewWebDependencyCollector(resolver, sharedClient)
-			deps.SetAllowedHosts(profile.RelatedHosts)
+			deps := evidence.NewWebDependencyCollector(runtimeResolver, sharedClient)
+			deps.SetAllowedHosts(profile.AssetHosts)
 			deps.SetSignatures(allSignatures)
 			collectors = append(collectors, deps)
 		}
@@ -180,10 +201,10 @@ func buildVerificationRuntime(
 		collectors = append(collectors, cookieCollector, corsCollector)
 	}
 	if profile != nil && profile.CheckNS {
-		collectors = append(collectors, evidence.NewNSCollector(resolver, allSignatures))
+		collectors = append(collectors, evidence.NewNSCollector(runtimeResolver, allSignatures))
 	}
 	if profile != nil && profile.CheckEmail {
-		emailCollector := evidence.NewEmailSecurityCollector(resolver)
+		emailCollector := evidence.NewEmailSecurityCollector(runtimeResolver)
 		emailCollector.SetSignatures(allSignatures)
 		collectors = append(collectors, emailCollector)
 	}
@@ -194,10 +215,10 @@ func buildVerificationRuntime(
 		collectors = append(collectors, evidence.NewShadowITCollector())
 	}
 	if profile != nil && profile.CheckAXFR {
-		collectors = append(collectors, evidence.NewZoneTransferCollector(resolver))
+		collectors = append(collectors, evidence.NewZoneTransferCollector(runtimeResolver))
 	}
 	if profile != nil && profile.CheckDNSSEC {
-		collectors = append(collectors, evidence.NewDNSSECCollector(resolver))
+		collectors = append(collectors, evidence.NewDNSSECCollector(runtimeResolver))
 	}
 	if profile != nil && profile.CheckEvasion {
 		mutator := evidence.NewHTTPMutatorCollector(allSignatures, timeout)
@@ -215,7 +236,7 @@ func buildVerificationRuntime(
 		Client:     sharedClient,
 		CheckCloud: profile != nil && profile.CheckCloud,
 	})
-	engine := verify.NewEngine(resolver, registry, verifierEngine, db)
+	engine := verify.NewEngine(runtimeResolver, registry, verifierEngine, db)
 	engine.RequireCompatibleProfile(digest)
 	return verificationRuntime{engine: engine}, nil
 }

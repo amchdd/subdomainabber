@@ -55,10 +55,8 @@ func (collector *WebDependencyCollector) Collect(ctx context.Context, analysis *
 		if index >= maxWebDependencies {
 			break
 		}
-		if _, ok := collector.allowed[ref.Host]; !ok {
-			continue
-		}
-		collector.inspect(ctx, analysis, ref)
+		_, follow := collector.allowed[ref.Host]
+		collector.inspect(ctx, analysis, ref, follow)
 	}
 	return nil
 }
@@ -96,7 +94,7 @@ func (collector *WebDependencyCollector) references(analysis *core.HostAnalysis)
 	return refs
 }
 
-func (collector *WebDependencyCollector) inspect(ctx context.Context, analysis *core.HostAnalysis, ref dependencyRef) {
+func (collector *WebDependencyCollector) inspect(ctx context.Context, analysis *core.HostAnalysis, ref dependencyRef, follow bool) {
 	chain, _ := collector.resolver.ResolveCNAMEChain(ctx, ref.Host)
 	target := ref.Host
 	if len(chain) > 0 {
@@ -114,7 +112,7 @@ func (collector *WebDependencyCollector) inspect(ctx context.Context, analysis *
 		analysis.AddWebDependency(dependency)
 		return
 	}
-	if status == core.DNSStatusResolved && ref.Source == "HTML" && isAssetKind(ref.Kind) && collector.client != nil {
+	if follow && status == core.DNSStatusResolved && ref.Source == "HTML" && isAssetKind(ref.Kind) && collector.client != nil {
 		dependency.HTTPStatus = collector.assetStatus(ctx, ref.URL)
 		if dependency.HTTPStatus == http.StatusNotFound || dependency.HTTPStatus == http.StatusGone {
 			analysis.AddEvidence(core.Evidence{

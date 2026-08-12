@@ -47,3 +47,30 @@ func TestCAAAllowsObservedIssuer(t *testing.T) {
 		t.Fatalf("issuer permitido foi marcado como inconsistente: %+v", analysis.Evidences)
 	}
 }
+
+func TestCAAIssuewildForRegularCert(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "example.com", DNS: core.DNSRecordSet{CAA: []string{"issuewild digicert.com"}},
+		Evidences: []core.Evidence{{Metadata: map[string]string{"tls_issuer": "Let's Encrypt R11", "tls_sans": "example.com"}}},
+	}
+	if err := NewCAACollector().Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "CAA_ISSUER_MISMATCH") {
+		t.Fatalf("issuewild foi aplicado a certificado sem wildcard: %+v", analysis.Evidences)
+	}
+}
+
+func TestCAAIodefStopsParentPolicy(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.example.com", DNS: core.DNSRecordSet{CAA: []string{"iodef mailto:security@example.com"}},
+		Evidences: []core.Evidence{{Metadata: map[string]string{"tls_issuer": "DigiCert TLS RSA SHA256 2020 CA1"}}},
+	}
+	collector := NewCAACollector(fakeCAAResolver{records: []string{"issue letsencrypt.org"}})
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "CAA_ISSUER_MISMATCH") {
+		t.Fatalf("política da zona foi herdada apesar do RRset no host: %+v", analysis.Evidences)
+	}
+}

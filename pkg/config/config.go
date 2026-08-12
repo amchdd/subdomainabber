@@ -75,6 +75,8 @@ type Config struct {
 	// DiscordMinSeverity filtra o volume de notificações. Valores aceitos:
 	// info, low, medium, high e critical. Variável de ambiente: SABBER_DISCORD_MIN_SEVERITY.
 	DiscordMinSeverity string `yaml:"discord_min_severity"`
+	WebhookURL         string `yaml:"webhook"`
+	WebhookSecret      string `yaml:"webhook_secret"`
 
 	// TelegramConfig contém a configuração de notificação do Telegram
 	// no formato "bot_token:chat_id".
@@ -134,6 +136,7 @@ type Config struct {
 	timeoutConfigured     bool
 	rateLimitConfigured   bool
 	redirectConfigured    bool
+	followConfigured      bool
 }
 
 // Defaults retorna uma configuração com valores padrão sensatos para uso
@@ -145,6 +148,7 @@ func Defaults() *Config {
 		Timeout:            5,
 		DBPath:             "subdomainabber.db",
 		RateLimit:          10,
+		FollowRedirects:    true,
 		RedirectDepth:      10,
 		AwsRegion:          "us-east-1",
 		DiscordMinSeverity: "medium",
@@ -178,6 +182,13 @@ func LoadFile(path string) (*Config, error) {
 	cfg.timeoutConfigured = configuredNumbers.Timeout != nil
 	cfg.rateLimitConfigured = configuredNumbers.RateLimit != nil
 	cfg.redirectConfigured = configuredNumbers.Redirect != nil
+	var configuredBooleans struct {
+		FollowRedirects *bool `yaml:"follow_redirects"`
+	}
+	if err := yaml.Unmarshal(data, &configuredBooleans); err != nil {
+		return nil, fmt.Errorf("config: erro ao interpretar os valores booleanos de %q: %w", path, err)
+	}
+	cfg.followConfigured = configuredBooleans.FollowRedirects != nil
 
 	return cfg, nil
 }
@@ -284,6 +295,7 @@ func ApplyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("SABBER_FOLLOW_REDIRECTS"); v != "" {
 		cfg.FollowRedirects = parseBool(v)
+		cfg.followConfigured = true
 	}
 	if v := os.Getenv("SABBER_FETCH_HEADERS"); v != "" {
 		cfg.FetchHeaders = parseBool(v)
@@ -310,6 +322,12 @@ func ApplyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("SABBER_DISCORD_MIN_SEVERITY"); v != "" {
 		cfg.DiscordMinSeverity = v
+	}
+	if v := os.Getenv("SABBER_WEBHOOK"); v != "" {
+		cfg.WebhookURL = v
+	}
+	if v := os.Getenv("SABBER_WEBHOOK_SECRET"); v != "" {
+		cfg.WebhookSecret = v
 	}
 	if v := os.Getenv("SABBER_TELEGRAM"); v != "" {
 		cfg.TelegramConfig = v
@@ -416,8 +434,9 @@ func Merge(base, override *Config) *Config {
 	if override.NoWildcardFilter {
 		merged.NoWildcardFilter = true
 	}
-	if override.FollowRedirects {
-		merged.FollowRedirects = true
+	if override.FollowRedirects || override.followConfigured {
+		merged.FollowRedirects = override.FollowRedirects
+		merged.followConfigured = override.followConfigured
 	}
 	if override.FetchHeaders {
 		merged.FetchHeaders = true
@@ -441,6 +460,12 @@ func Merge(base, override *Config) *Config {
 	}
 	if override.DiscordMinSeverity != "" {
 		merged.DiscordMinSeverity = override.DiscordMinSeverity
+	}
+	if override.WebhookURL != "" {
+		merged.WebhookURL = override.WebhookURL
+	}
+	if override.WebhookSecret != "" {
+		merged.WebhookSecret = override.WebhookSecret
 	}
 	if override.TelegramConfig != "" {
 		merged.TelegramConfig = override.TelegramConfig

@@ -48,6 +48,9 @@ func TestCookieScopeUsesRegistrableDomainAndBatchCache(t *testing.T) {
 	if !first.ParentCookieScope || !second.ParentCookieScope || calls.Load() != 1 {
 		t.Fatalf("cache or cookie result failed: first=%t second=%t calls=%d", first.ParentCookieScope, second.ParentCookieScope, calls.Load())
 	}
+	if !hasEvidenceType(first.Evidences, "RELATED_DOMAIN_COOKIE_SCOPE") || !hasEvidenceType(second.Evidences, "RELATED_DOMAIN_COOKIE_SCOPE") {
+		t.Fatalf("escopo de cookie não foi registrado: first=%+v second=%+v", first.Evidences, second.Evidences)
+	}
 
 	collector.BeginBatch()
 	if err := collector.Collect(context.Background(), relatedDomainAnalysis("new.example.co.uk")); err != nil {

@@ -2,6 +2,7 @@ package evidence
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
 
@@ -70,6 +71,23 @@ func TestOriginRejectsPrivateIP(t *testing.T) {
 	}
 }
 
+func TestOriginDoesNotDialPrivateHostname(t *testing.T) {
+	analysis := originAnalysis("origin.example.net")
+	raw := &fixedRawTransport{result: core.RawHTTPObservation{StatusCode: http.StatusOK, Body: []byte("application"), Complete: true}}
+	collector := NewOriginCollector(raw)
+	collector.SetAllowedTargets([]string{"origin.example.net"})
+	collector.lookup = func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.0.0.8")}, nil
+	}
+
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if raw.calls != 0 || hasEvidenceType(analysis.Evidences, "ORIGIN_DIRECT_MATCH") {
+		t.Fatalf("hostname privado foi sondado: chamadas=%d evidências=%+v", raw.calls, analysis.Evidences)
+	}
+}
+
 func TestOriginRequiresTwoMatches(t *testing.T) {
 	analysis := originAnalysis("203.0.113.15")
 	raw := &sequenceRawTransport{results: []core.RawHTTPObservation{
@@ -98,6 +116,28 @@ func TestOriginReadsDNSAndTLSHints(t *testing.T) {
 	}
 	if evidenceCount(analysis, "ORIGIN_EXPOSURE_HINT") != 2 {
 		t.Fatalf("sinais DNS/TLS não correlacionados: %+v", analysis.Evidences)
+	}
+}
+
+func TestOriginIgnoresCDNProviderFamily(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.example.com", CDN: "AWS CloudFront",
+		CloudIPCandidates: []core.CloudIPCandidate{{
+			IP: "203.0.113.20", ProviderID: "amazon_web_services", Provider: "Amazon Web Services",
+		}},
+	}
+	if err := NewOriginCollector(nil).Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "ORIGIN_EXPOSURE_HINT") {
+		t.Fatalf("IP da família do CDN foi tratado como origin: %+v", analysis.Evidences)
+	}
+}
+
+func TestNormalizeOriginTargetWithIPv6Port(t *testing.T) {
+	const target = "2606:4700:4700::1111"
+	if got := normalizeOriginTarget("[" + target + "]:443"); got != target {
+		t.Fatalf("IPv6 com porta normalizado como %q", got)
 	}
 }
 

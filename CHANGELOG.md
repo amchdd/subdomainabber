@@ -9,6 +9,12 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Adicionado
 
+- consenso DNS multi-resolvedor com estados de propagação, visão dividida e resultado inconclusivo;
+- coleta de DNAME, HTTPS e SVCB com preservação de parâmetros e correlação conservadora de provedor;
+- histórico de execuções, observações completas, retomada, comparação e replay local no SQLite;
+- modo `--stream` com deduplicação em disco e lotes de memória limitada;
+- corpus versionado por vetor e sinais adicionais de aprendizado para corpo, servidor, emissor TLS e domínio calculado pela Public Suffix List;
+- exportação SARIF, política `--fail-on-severity`, webhook HTTPS assinado e bundles forenses Ed25519;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
@@ -20,6 +26,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Alterado
 
+- cadeias de redirect, comparação de vhost, dependências web passivas, TLS sem SNI e descoberta passiva de SANs relacionados passam a integrar o perfil padrão;
+- consultas HTTP a assets continuam explícitas por `--related-hosts`, e o SNI alternativo continua opcional por `--check-sni`;
 - licenciamento do código original alterado de MIT para MIT com a Commons Clause License Condition v1.0; `v0.1.0-alpha` e versões anteriores permanecem sob MIT;
 - dependências Go diretas atualizadas e ambiente de execução mínimo elevado para Go 1.26.5;
 - AWS Smithy, Cobra e dependências transitivas Go atualizadas;
@@ -29,6 +37,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - atualizações das GitHub Actions são agrupadas pelo Dependabot;
 - enumeração passiva, pivotamento WHOIS e DNS ativo agora compartilham proxy, tempo limite e limitador de taxa;
 - benchmark controlado do Mutator passa a falhar também quando encontra falsos negativos;
+- benchmark sintético usa diretamente o fluxo de coleta e classificação e mantém confirmação reservada a provas de controle;
 - opções de varredura podem ser usadas diretamente no comando raiz, sem informar o subcomando `scan`;
 - achados iniciais relevantes podem ser enviados ao Discord por `--discord-webhook`;
 - a quantidade efetiva de hosts em processamento é ajustada ao limite global de taxa para evitar privação de execução e reduzir o tempo até o primeiro resultado;
@@ -89,6 +98,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Segurança
 
+- divergência DNS impede que uma resposta isolada promova um CNAME a dangling;
 - a CI passa a verificar vulnerabilidades alcançáveis com `govulncheck`;
 - filtros de escopo deixam de aceitar domínios que apenas terminam com o texto do alvo.
 

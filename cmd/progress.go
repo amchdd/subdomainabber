@@ -44,6 +44,7 @@ type domainResult struct {
 	Actionable     bool
 	FatalErr       error
 	Candidates     []string
+	PolicyMatch    bool
 }
 
 type scanProgressSnapshot struct {

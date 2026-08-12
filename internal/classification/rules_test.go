@@ -247,6 +247,15 @@ func TestBrokenNonCNAMEVectorsRemainMisconfigurations(t *testing.T) {
 	}
 }
 
+func TestTransientMailFailureIsInconclusive(t *testing.T) {
+	for _, evidenceType := range []string{"MX_UNRESOLVABLE", "SRV_UNRESOLVABLE"} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType}}}
+		if got := Classify(analysis); got != LevelInsufficientEvidence {
+			t.Fatalf("%s = %s", evidenceType, got)
+		}
+	}
+}
+
 func TestAXFRIsExposureNotTakeover(t *testing.T) {
 	analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: "DNS_AXFR_ALLOWED"}}}
 	if got := Classify(analysis); got != LevelExposed {

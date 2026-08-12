@@ -221,6 +221,10 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o provedor observado mudou desde a varredura anterior"
 	case "PROVIDER_MIGRATION_STALE_REFERENCE":
 		return "a referência ao provedor anterior permanece após a migração"
+	case "RELATED_DOMAIN_COOKIE_SCOPE":
+		return "o domínio registrável define cookie com escopo que inclui o subdomínio candidato"
+	case "RELATED_DOMAIN_CORS_CREDENTIALS":
+		return "o domínio registrável confia na origem candidata e permite credenciais"
 	default:
 		return evidence.Description
 	}

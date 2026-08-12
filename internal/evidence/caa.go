@@ -30,24 +30,27 @@ func (*CAACollector) Phase() CollectorPhase { return PhaseImpact }
 
 func (collector *CAACollector) Collect(ctx context.Context, analysis *core.HostAnalysis) error {
 	analysis.AddTestedVector("CAA")
-	hostPolicy := caaIssuers(analysis.DNS.CAA)
+	hostPolicy := caaPolicy(analysis.DNS.CAA)
 	root := dns.ExtractRootDomain(analysis.Host)
-	var zonePolicy []string
+	var zoneRecords []string
 	if collector.resolver != nil && root != "" && !strings.EqualFold(root, analysis.Host) {
 		if records, err := collector.resolver.ResolveCAA(ctx, root); err == nil {
-			zonePolicy = caaIssuers(records)
+			zoneRecords = records
 		}
 	}
-	effective := hostPolicy
-	if len(effective) == 0 {
-		effective = zonePolicy
+	zonePolicy := caaPolicy(zoneRecords)
+	effectiveRecords := analysis.DNS.CAA
+	effectivePolicy := hostPolicy
+	if len(effectiveRecords) == 0 {
+		effectiveRecords = zoneRecords
+		effectivePolicy = zonePolicy
 	}
-	if len(effective) > 0 {
+	if len(effectivePolicy) > 0 {
 		analysis.AddEvidence(core.Evidence{
 			Type: "CAA_RECORD_PRESENT", Source: "DNS",
 			Description: "A política CAA restringe as autoridades certificadoras permitidas.",
 			Weight:      10, Confidence: 100, IsNegative: true,
-			Metadata: map[string]string{"issuers": strings.Join(effective, ","), "zone": root},
+			Metadata: map[string]string{"policy": strings.Join(effectivePolicy, ","), "zone": root},
 		})
 	}
 	if len(hostPolicy) > 0 && len(zonePolicy) > 0 && !sameStrings(hostPolicy, zonePolicy) {
@@ -60,37 +63,58 @@ func (collector *CAACollector) Collect(ctx context.Context, analysis *core.HostA
 	}
 	issuer := tlsIssuer(analysis.Evidences)
 	issuerDomain := issuerCAAName(issuer)
-	if issuerDomain != "" && len(effective) > 0 && !containsCAA(effective, issuerDomain) {
+	allowed, restricted := caaIssuers(effectiveRecords, tlsHasWildcard(analysis.Evidences))
+	if issuerDomain != "" && restricted && !containsCAA(allowed, issuerDomain) {
 		analysis.AddEvidence(core.Evidence{
 			Type: "CAA_ISSUER_MISMATCH", Source: "DNS/TLS",
 			Description: fmt.Sprintf("O certificado observado foi emitido por %s, fora da política CAA coletada.", issuer),
 			Weight:      0, Confidence: 90,
-			Metadata: map[string]string{"tls_issuer": issuer, "issuer_domain": issuerDomain, "allowed_issuers": strings.Join(effective, ",")},
+			Metadata: map[string]string{"tls_issuer": issuer, "issuer_domain": issuerDomain, "allowed_issuers": strings.Join(allowed, ",")},
 		})
 	}
 	return nil
 }
 
-func caaIssuers(records []string) []string {
+func caaPolicy(records []string) []string {
 	seen := make(map[string]struct{})
-	var issuers []string
+	var policy []string
 	for _, record := range records {
 		fields := strings.Fields(strings.ToLower(strings.TrimSpace(record)))
 		if len(fields) < 2 || (fields[0] != "issue" && fields[0] != "issuewild") {
 			continue
 		}
 		issuer := strings.Trim(strings.SplitN(fields[1], ";", 2)[0], `"' `)
-		if issuer == "" {
+		value := fields[0] + "=" + issuer
+		if _, ok := seen[value]; ok {
 			continue
 		}
-		if _, ok := seen[issuer]; ok {
-			continue
-		}
-		seen[issuer] = struct{}{}
-		issuers = append(issuers, issuer)
+		seen[value] = struct{}{}
+		policy = append(policy, value)
 	}
-	sort.Strings(issuers)
-	return issuers
+	sort.Strings(policy)
+	return policy
+}
+
+func caaIssuers(records []string, wildcard bool) ([]string, bool) {
+	byTag := map[string][]string{"issue": {}, "issuewild": {}}
+	present := make(map[string]bool)
+	for _, record := range records {
+		fields := strings.Fields(strings.ToLower(strings.TrimSpace(record)))
+		if len(fields) < 2 || (fields[0] != "issue" && fields[0] != "issuewild") {
+			continue
+		}
+		present[fields[0]] = true
+		issuer := strings.Trim(strings.SplitN(fields[1], ";", 2)[0], `"' `)
+		if issuer != "" && !containsCAA(byTag[fields[0]], issuer) {
+			byTag[fields[0]] = append(byTag[fields[0]], issuer)
+		}
+	}
+	tag := "issue"
+	if wildcard && present["issuewild"] {
+		tag = "issuewild"
+	}
+	sort.Strings(byTag[tag])
+	return byTag[tag], present[tag]
 }
 
 func tlsIssuer(evidences []core.Evidence) string {
@@ -100,6 +124,15 @@ func tlsIssuer(evidences []core.Evidence) string {
 		}
 	}
 	return ""
+}
+
+func tlsHasWildcard(evidences []core.Evidence) bool {
+	for _, evidence := range evidences {
+		if strings.Contains(evidence.Metadata["tls_sans"], "*.") {
+			return true
+		}
+	}
+	return false
 }
 
 func issuerCAAName(issuer string) string {
@@ -126,7 +159,7 @@ func issuerCAAName(issuer string) string {
 
 func containsCAA(issuers []string, expected string) bool {
 	for _, issuer := range issuers {
-		if issuer == expected || strings.HasSuffix(issuer, "."+expected) {
+		if issuer == expected {
 			return true
 		}
 	}

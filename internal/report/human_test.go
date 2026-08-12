@@ -84,6 +84,20 @@ func TestHumanConsolidatesFindingsAndKeepsCNAMETakeoverFirst(t *testing.T) {
 	}
 }
 
+func TestHumanConsolidatesGenericFindings(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.example.com", Classification: classification.LevelMisconfigured,
+		Evidences: []core.Evidence{
+			{Type: "DNSSEC_BOGUS", Source: "DNSSEC", Description: "DNSSEC inválido"},
+			{Type: "HTTPS_DOWNGRADE_REDIRECT", Source: "https", Description: "downgrade", Metadata: map[string]string{"location": "http://app.example.com"}},
+		},
+	}
+	output := Human(analysis, "HIGH")
+	if strings.Count(output, "[") != 1 || !strings.Contains(output, "DNSSEC_BOGUS") || !strings.Contains(output, "Achado relacionado: HTTP —") {
+		t.Fatalf("achados genéricos não foram consolidados:\n%s", output)
+	}
+}
+
 func TestHumanUsesPortugueseAndOptionalANSI(t *testing.T) {
 	analysis := &core.HostAnalysis{
 		Host: "dev.example.com", Classification: classification.LevelDelegationBroken,

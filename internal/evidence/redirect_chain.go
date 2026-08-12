@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
+	"github.com/amchdd/subdomainabber/internal/dns"
 )
 
 const maxRedirectDepth = 20
@@ -102,12 +103,12 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 		}
 		nextHost := normalizeWebHost(next.Hostname())
 		if !sameWebHost(nextHost, analysis.Host) {
-			if _, ok := collector.allowed[nextHost]; !ok {
+			if _, ok := collector.allowed[nextHost]; !ok && !sameWebRoot(nextHost, analysis.Host) {
 				chain.FinalURL = next.String()
 				chain.StoppedReason = "OUT_OF_SCOPE"
 				analysis.AddEvidence(core.Evidence{
 					Type: "REDIRECT_TARGET_OUT_OF_SCOPE", Source: scheme,
-					Description: "A cadeia apontou para um hostname não autorizado para sondagem adicional.",
+					Description: "A cadeia apontou para um hostname externo que não será consultado.",
 					Weight:      0, Confidence: 100,
 					Metadata: map[string]string{"target_url": next.String(), "target_host": nextHost},
 				})
@@ -149,6 +150,11 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 	analysis.SetRedirectChain(scheme, chain)
 }
 
+func sameWebRoot(left, right string) bool {
+	leftRoot, rightRoot := dns.ExtractRootDomain(left), dns.ExtractRootDomain(right)
+	return leftRoot != "" && leftRoot == rightRoot
+}
+
 func (collector *RedirectCollector) targetStatus(ctx context.Context, host string) core.DNSStatus {
 	if collector.resolver == nil {
 		return core.DNSStatusError
@@ -167,7 +173,7 @@ func (collector *RedirectCollector) addDanglingEvidence(analysis *core.HostAnaly
 	}
 	analysis.AddEvidence(core.Evidence{
 		Type: "DANGLING_REDIRECT", Source: "HTTP",
-		Description: "O destino permitido da cadeia não possui resolução utilizável ou responde como recurso removido.",
+		Description: "O destino da cadeia não possui resolução utilizável ou responde como recurso removido.",
 		Weight:      20, Confidence: 90, Metadata: metadata,
 	})
 }
