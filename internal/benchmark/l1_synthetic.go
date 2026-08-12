@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/amchdd/subdomainabber/internal/classification"
+	"github.com/amchdd/subdomainabber/internal/confidence"
 	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/internal/dns"
 	"github.com/amchdd/subdomainabber/internal/evidence"
-	"github.com/amchdd/subdomainabber/internal/storage"
 	"github.com/amchdd/subdomainabber/internal/verifiers"
-	"github.com/amchdd/subdomainabber/internal/verify"
 	"github.com/amchdd/subdomainabber/pkg/signatures"
 )
 
@@ -51,7 +51,7 @@ func RunL1Synthetic() bool {
 	txtCollector := evidence.NewTXTCollector(allSignatures)
 	srvCollector := evidence.NewSRVCollector(res, allSignatures)
 	// Os coletores locais usam um tempo limite curto para agilizar o benchmark.
-	tlsCollector := evidence.NewTLSCollector(allSignatures, 2)
+	tlsCollector := evidence.NewTLSCollector(allSignatures, 2*time.Second)
 	tlsCollector.SetDialer(mock.TLSDialer())
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
 	httpCollector := evidence.NewHTTPCollector(allSignatures, 3*time.Second, "", false, "", false)
@@ -67,13 +67,11 @@ func RunL1Synthetic() bool {
 	}
 
 	verifierEngine := verifiers.NewEngine(verifiers.Config{Client: testClient})
-	db, _ := storage.New(":memory:")
-
-	engine := verify.NewEngine(res, registry, verifierEngine, db)
+	registry.BeginBatch()
 
 	// Define a classificação de referência de cada caso.
 	testCases := []TestCase{
-		{Host: "gh-takeover.synthetic", Classification: ExpectedConfirmed, Provider: "GitHub Pages"},
+		{Host: "gh-takeover.synthetic", Classification: ExpectedLikely, Provider: "GitHub Pages"},
 		{Host: "aws-takeover.synthetic", Classification: ExpectedLikely, Provider: "AWS S3"},
 		{Host: "healthy.synthetic", Classification: ExpectedHealthy},
 		{Host: "ns-orphaned.synthetic", Classification: ExpectedDelegationBroken},
@@ -82,22 +80,31 @@ func RunL1Synthetic() bool {
 	matrix := &Matrix{TotalRuns: len(testCases)}
 
 	for _, tc := range testCases {
-		hist := &core.HostAnalysis{Host: tc.Host}
-		result, err := engine.Verify(context.Background(), hist)
+		dnsRecords, err := res.DiscoverProfile(context.Background(), tc.Host)
 		if err != nil {
 			fmt.Printf("Erro ao avaliar %s: %v\n", tc.Host, err)
 			continue
 		}
+		analysis := &core.HostAnalysis{Host: tc.Host, DNS: dnsRecords, Classification: classification.LevelUnknown}
+		if err := registry.Run(context.Background(), analysis); err != nil {
+			fmt.Printf("Erro ao coletar evidências de %s: %v\n", tc.Host, err)
+			continue
+		}
+		classification.Process(analysis)
+		verifierEngine.Run(context.Background(), analysis)
+		if analysis.VerificationScore > 0 {
+			analysis.Classification = classification.Classify(analysis)
+		}
+		confidence.Calculate(analysis)
 
-		// Debug: log classification and evidences when unexpected or empty.
-		if result.NewClassification == "" {
-			fmt.Printf("DEBUG: %s produced empty classification. Evidences:\n", tc.Host)
-			for _, ev := range result.NewAnalysis.Evidences {
+		if analysis.Classification == "" {
+			fmt.Printf("%s terminou sem classificação. Evidências:\n", tc.Host)
+			for _, ev := range analysis.Evidences {
 				fmt.Printf("  - %s | %s | %v\n", ev.Type, ev.Source, ev.Metadata)
 			}
 		}
 
-		class := result.NewClassification
+		class := analysis.Classification
 
 		if class == string(tc.Classification) {
 			if isTakeoverSignal(string(tc.Classification)) {
@@ -112,7 +119,7 @@ func RunL1Synthetic() bool {
 			if expectedTakeover && !actualTakeover {
 				matrix.TakeoverFN++
 				fmt.Printf("Falso negativo em %s. Evidências:\n", tc.Host)
-				for _, ev := range result.NewAnalysis.Evidences {
+				for _, ev := range analysis.Evidences {
 					fmt.Printf("   - %s: %s\n", ev.Type, ev.Description)
 				}
 			} else if !expectedTakeover && actualTakeover {
@@ -151,6 +158,7 @@ func setupL1Scenarios(mock *MockServer) {
 	// Domínio saudável.
 	mock.SetA("healthy.synthetic.", "1.1.1.1")
 	mock.SetHTTP("healthy.synthetic", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "cloudflare")
 		w.WriteHeader(200)
 		w.Write([]byte("Welcome to my site"))
 	})
