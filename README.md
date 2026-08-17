@@ -21,6 +21,7 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 - separa takeover, exposição, configuração quebrada e candidatos que ainda exigem prova de reivindicabilidade;
 - armazena resultados e instantâneos em SQLite para revalidação posterior;
 - oferece saída em texto, JSON Lines e modos de explicação;
+- preserva evidências independentes de CNAME, NS, MX, SRV, SPF, IP e AXFR no mesmo host, sem ocultar achados secundários;
 - roteia verificadores ativos somente para provedores e CNAMEs compatíveis;
 - permite módulos ativos opcionais para exposição em nuvem, AXFR, redirecionamentos e outras verificações;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
