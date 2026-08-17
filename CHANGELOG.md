@@ -9,6 +9,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Adicionado
 
+- comparação TLS com SNI ausente e alternativo, descoberta controlada de SANs e histórico de drift do certificado;
+- correlação de possíveis origens atrás de CDN/WAF com confirmação direta limitada aos endereços informados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;

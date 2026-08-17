@@ -12,14 +12,21 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	previousEvasion := checkEvasion
 	previousFraming := checkFraming
 	previousAggressive := aggressive
+	previousSNI := checkSNI
+	previousOrigin := checkOrigin
+	previousSANPivot := pivotSAN
 	t.Cleanup(func() {
 		checkEvasion = previousEvasion
 		checkFraming = previousFraming
 		aggressive = previousAggressive
+		checkSNI = previousSNI
+		checkOrigin = previousOrigin
+		pivotSAN = previousSANPivot
 	})
 	checkEvasion = false
 	checkFraming = false
 	aggressive = false
+	pivotSAN = false
 
 	enableCheckAllModules()
 	if checkEvasion {
@@ -30,6 +37,12 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 	if aggressive {
 		t.Fatal("--check-all enabled real auto-claim")
+	}
+	if pivotSAN {
+		t.Fatal("--check-all habilitou pivô SAN sem allowlist")
+	}
+	if !checkSNI || !checkOrigin {
+		t.Fatal("--check-all não habilitou as análises TLS seguras")
 	}
 }
 

@@ -51,6 +51,11 @@ func TestProfileCompatibilityDetectsCatalogAndUnsafeModes(t *testing.T) {
 	if reason := engine.profileCompatibilityError(compatible); reason != "" {
 		t.Fatalf("perfil compatível recusado: %s", reason)
 	}
+	versionTwo := *compatible
+	versionTwo.Version = 2
+	if reason := engine.profileCompatibilityError(&versionTwo); reason != "" {
+		t.Fatalf("perfil v2 recusado: %s", reason)
+	}
 
 	changed := *compatible
 	changed.SignatureDigest = "sha256:old"

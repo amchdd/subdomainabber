@@ -338,6 +338,46 @@ type QueryOptions struct {
 	ChangedSince   time.Duration
 }
 
+func (s *Store) GetHost(ctx context.Context, host string) (*core.HostAnalysis, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	row := s.db.QueryRowContext(ctx, `SELECT host, classification, previous_classification, risk_score,
+		mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile,
+		first_seen, last_seen, last_state_change FROM hosts WHERE host = ?`, host)
+	var analysis core.HostAnalysis
+	var dnsText, evidenceText, vectorsText, profileText string
+	var firstSeen, lastSeen, lastChange time.Time
+	if err := row.Scan(
+		&analysis.Host, &analysis.Classification, &analysis.PreviousClassification,
+		&analysis.RiskScore, &analysis.MitigationScore, &analysis.ConfidenceScore,
+		&dnsText, &evidenceText, &vectorsText, &profileText,
+		&firstSeen, &lastSeen, &lastChange,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("consultando o host %s: %w", host, err)
+	}
+	if err := json.Unmarshal([]byte(dnsText), &analysis.DNS); err != nil {
+		return nil, fmt.Errorf("decodificando registros DNS de %s: %w", host, err)
+	}
+	if err := json.Unmarshal([]byte(evidenceText), &analysis.Evidences); err != nil {
+		return nil, fmt.Errorf("decodificando evidências de %s: %w", host, err)
+	}
+	if err := json.Unmarshal([]byte(vectorsText), &analysis.TestedVectors); err != nil {
+		return nil, fmt.Errorf("decodificando vetores de %s: %w", host, err)
+	}
+	if profileText != "" && profileText != "null" {
+		if err := json.Unmarshal([]byte(profileText), &analysis.ScanProfile); err != nil {
+			return nil, fmt.Errorf("decodificando perfil de %s: %w", host, err)
+		}
+	}
+	analysis.FirstSeen = firstSeen
+	analysis.LastSeen = lastSeen
+	analysis.LastStateChange = lastChange
+	return &analysis, nil
+}
+
 // GetAllHosts recupera os hosts do banco filtrados pelas opções.
 func (s *Store) GetAllHosts(ctx context.Context, opts QueryOptions) ([]core.HostAnalysis, error) {
 	s.mu.RLock()

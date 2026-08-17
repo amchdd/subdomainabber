@@ -109,6 +109,10 @@ func buildVerificationRuntime(
 		evidence.NewSRVCollector(resolver, allSignatures),
 	}
 	tlsCollector := evidence.NewTLSCollector(allSignatures, timeout)
+	if profile != nil && profile.Version >= 2 {
+		tlsCollector.EnableSNI(profile.CheckSNI)
+		tlsCollector.SetSANRoots(profile.SANRoots)
+	}
 	tlsCollector.SetRequestLimiter(limiter)
 	httpCollector := evidence.NewHTTPCollector(
 		allSignatures,
@@ -128,6 +132,20 @@ func buildVerificationRuntime(
 		evidence.NewCAACollector(),
 		httpCollector,
 	)
+	if profile != nil && profile.Version >= 2 && profile.CheckOrigin {
+		var originTransport evidence.HTTPRawTransport
+		if len(profile.OriginTargets) > 0 {
+			raw := evidence.NewNetworkHTTPRawTransport(timeout)
+			if err := raw.SetProxy(cfg.Proxy); err != nil {
+				return verificationRuntime{}, fmt.Errorf("configurando proxy da confirmação de origin: %w", err)
+			}
+			originTransport = raw
+		}
+		originCollector := evidence.NewOriginCollector(originTransport)
+		originCollector.SetAllowedTargets(profile.OriginTargets)
+		originCollector.SetRequestLimiter(limiter)
+		collectors = append(collectors, originCollector)
+	}
 
 	if profile != nil && profile.RelatedImpactInScope {
 		roots := make([]string, 0, len(hosts))

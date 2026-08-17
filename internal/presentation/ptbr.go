@@ -173,6 +173,14 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o domínio possui registros MX, mas não publica uma política SPF"
 	case "HTTP_OPEN_REDIRECT":
 		return "o host aceitou um redirecionamento para destino externo"
+	case "ORIGIN_DIRECT_MATCH":
+		return "um destino permitido reproduziu a aplicação com o Host e o SNI originais"
+	case "ORIGIN_EXPOSURE_CANDIDATE":
+		return "um cabeçalho revelou um candidato a origin; a alcançabilidade direta não foi confirmada"
+	case "TLS_CERTIFICATE_DRIFT":
+		return "issuer, SAN ou provider mudou desde a coleta anterior"
+	case "SNI_CERT_MISMATCH":
+		return "o mesmo IP apresentou outro certificado com SNI ausente ou alternativo"
 	default:
 		return evidence.Description
 	}

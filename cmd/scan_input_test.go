@@ -54,6 +54,36 @@ func TestValidScanDomainSupportsDNSLabelsButRejectsOutOfScopeSyntax(t *testing.T
 	}
 }
 
+func TestSANRootsRequireExplicitScope(t *testing.T) {
+	if _, err := parseSANRoots(false, "example.com"); err == nil {
+		t.Fatal("--san-roots foi aceito sem --pivot-san")
+	}
+	roots, err := parseSANRoots(true, "example.com")
+	if err != nil || len(roots) != 1 || roots[0] != "example.com" {
+		t.Fatalf("raízes SAN = %#v, %v", roots, err)
+	}
+	if _, err := parseSANRoots(true, "api.example.com"); err == nil {
+		t.Fatal("subdomínio foi aceito como raiz do pivô SAN")
+	}
+}
+
+func TestOriginAllowlistRejectsPrivateIP(t *testing.T) {
+	if _, err := parseOriginTargets(false, "203.0.113.10"); err == nil {
+		t.Fatal("allowlist foi aceita sem --check-origin")
+	}
+	if _, err := parseOriginTargets(true, "10.0.0.8"); err == nil {
+		t.Fatal("IP privado foi aceito na allowlist de origin")
+	}
+}
+
+func TestQueueSANsDeduplicatesAndLimits(t *testing.T) {
+	seen := map[string]struct{}{"app.example.com": {}}
+	queued := queueSANs(seen, []string{"app.example.com", "api.example.com", "cdn.example.com"}, 1)
+	if len(queued) != 1 || queued[0] != "api.example.com" {
+		t.Fatalf("fila SAN inesperada: %#v", queued)
+	}
+}
+
 func TestAggressiveAutoClaimRequiresConfirmationAndExactScanAllowlist(t *testing.T) {
 	domains := []string{"bucket.example.com", "other.example.com"}
 	if _, err := aggressiveClaimTargets(true, false, "bucket.example.com", domains); err == nil {
