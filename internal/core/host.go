@@ -14,6 +14,7 @@ type DNSRecordSet struct {
 	CNAME      []string    `json:"cname"` // Cadeia resolvida.
 	NS         []string    `json:"ns"`
 	MX         []string    `json:"mx"`
+	MXRecords  []MXRecord  `json:"mx_records,omitempty"`
 	TXT        []string    `json:"txt"`
 	SRV        []string    `json:"srv"`
 	SRVRecords []SRVRecord `json:"srv_records,omitempty"`

@@ -423,7 +423,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	tlsCollector.EnableSNI(checkSNI)
 	tlsCollector.SetSANRoots(sanRoots)
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
-	caaCollector := evidence.NewCAACollector()
+	caaCollector := evidence.NewCAACollector(res)
 	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, false, cfg.UserAgent, cfg.FetchHeaders)
 	if err := httpCollector.Validate(); err != nil {
 		return fmt.Errorf("configurando o coletor HTTP: %w", err)
@@ -446,6 +446,8 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		httpCollector,
 		cookieCollector,
 		corsCollector,
+		evidence.NewTXTResidualCollector(),
+		evidence.NewProviderHistoryCollector(),
 	}
 	var redirectCollector *evidence.RedirectCollector
 	if cfg.FollowRedirects {

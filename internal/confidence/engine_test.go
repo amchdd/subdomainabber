@@ -39,7 +39,7 @@ func TestCoverageIsRelativeToRequestedProfile(t *testing.T) {
 }
 
 func TestCoverageIncludesWebModules(t *testing.T) {
-	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA"}
+	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA", "PROVIDER_HISTORY"}
 	profile := &core.ScanProfile{Version: 2, FollowRedirects: true, CheckVHost: true, CheckWebDeps: true}
 	analysis := &core.HostAnalysis{TestedVectors: vectors, ScanProfile: profile}
 	if got := Calculate(analysis).CoverageScore; got >= 100 {
@@ -52,7 +52,7 @@ func TestCoverageIncludesWebModules(t *testing.T) {
 }
 
 func TestCoverageIncludesTLSModules(t *testing.T) {
-	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA", "HTTP_POSTURE"}
+	vectors := []string{"DNS", "HTTP", "TLS", "MX", "TXT", "SRV", "A_AAAA_ASN", "CAA", "HTTP_POSTURE", "PROVIDER_HISTORY"}
 	profile := &core.ScanProfile{Version: 2, CheckSNI: true, PivotSAN: true, CheckOrigin: true}
 	analysis := &core.HostAnalysis{TestedVectors: vectors, ScanProfile: profile}
 	if got := Calculate(analysis).CoverageScore; got >= 100 {

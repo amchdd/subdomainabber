@@ -596,6 +596,18 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]stri
 // ResolveMX retorna a lista de servidores de e-mail configurados (MX) para o domínio.
 // É usado para detectar takeover via MX.
 func (r *Resolver) ResolveMX(ctx context.Context, fqdn string) ([]string, error) {
+	records, err := r.ResolveMXRecords(ctx, fqdn)
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, record := range records {
+		targets = append(targets, record.Target)
+	}
+	return targets, nil
+}
+
+func (r *Resolver) ResolveMXRecords(ctx context.Context, fqdn string) ([]core.MXRecord, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(fqdn), dns.TypeMX)
 	m.RecursionDesired = true
@@ -605,22 +617,28 @@ func (r *Resolver) ResolveMX(ctx context.Context, fqdn string) ([]string, error)
 		return nil, fmt.Errorf("falha ao resolver MX: %w", err)
 	}
 
-	var mxs []string
+	var records []core.MXRecord
 	if resp.Rcode == dns.RcodeSuccess {
 		for _, ans := range resp.Answer {
 			if mx, ok := ans.(*dns.MX); ok {
 				if mx.Preference == 0 && strings.TrimSpace(mx.Mx) == "." {
-					mxs = append(mxs, ".")
+					records = append(records, core.MXRecord{Target: "."})
 					continue
 				}
 				target := strings.TrimSuffix(strings.ToLower(mx.Mx), ".")
 				if target != "" {
-					mxs = append(mxs, target)
+					records = append(records, core.MXRecord{Preference: mx.Preference, Target: target})
 				}
 			}
 		}
 	}
-	return mxs, nil
+	sort.Slice(records, func(left, right int) bool {
+		if records[left].Preference == records[right].Preference {
+			return records[left].Target < records[right].Target
+		}
+		return records[left].Preference < records[right].Preference
+	})
+	return records, nil
 }
 
 // ResolveA retorna os endereços IPv4 (A) configurados para o domínio.
@@ -1111,7 +1129,24 @@ func (r *Resolver) DiscoverProfile(ctx context.Context, host string) (core.DNSRe
 	run(func() ([]string, error) { return r.ResolveAAAA(ctx, host) }, func(res []string) { profile.AAAA = res })
 	run(func() ([]string, error) { return r.ResolveCNAMEChain(ctx, host) }, func(res []string) { profile.CNAME = res })
 	run(func() ([]string, error) { return r.LookupNS(ctx, host) }, func(res []string) { profile.NS = res })
-	run(func() ([]string, error) { return r.ResolveMX(ctx, host) }, func(res []string) { profile.MX = res })
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		records, err := r.ResolveMXRecords(ctx, host)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			if firstQueryErr == nil {
+				firstQueryErr = err
+			}
+			return
+		}
+		successfulQueries++
+		profile.MXRecords = records
+		for _, record := range records {
+			profile.MX = append(profile.MX, record.Target)
+		}
+	}()
 	run(func() ([]string, error) { return r.ResolveTXT(ctx, host) }, func(res []string) { profile.TXT = res })
 	if looksLikeSRVOwner(host) {
 		wg.Add(1)
@@ -1301,6 +1336,54 @@ func (r *Resolver) CheckDNSSEC(ctx context.Context, domain string) (map[string]b
 		return nil, err
 	}
 	return cloneBoolMap(value.(map[string]bool)), nil
+}
+
+func (r *Resolver) DiagnoseDNSSEC(ctx context.Context, domain string) (core.DNSSECDiagnosis, error) {
+	normal := new(dns.Msg)
+	normal.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+	normal.SetEdns0(4096, true)
+	normal.RecursionDesired = true
+	response, err := r.exchange(ctx, normal)
+	if err != nil {
+		return core.DNSSECDiagnosis{}, err
+	}
+	if response.Rcode != dns.RcodeServerFailure {
+		return classifyDNSSEC(response, nil), nil
+	}
+	checkingDisabled := normal.Copy()
+	checkingDisabled.CheckingDisabled = true
+	cdResponse, err := r.exchange(ctx, checkingDisabled)
+	if err != nil {
+		return core.DNSSECDiagnosis{}, err
+	}
+	return classifyDNSSEC(response, cdResponse), nil
+}
+
+func classifyDNSSEC(normal, checkingDisabled *dns.Msg) core.DNSSECDiagnosis {
+	result := core.DNSSECDiagnosis{NormalStatus: responseStatus(normal, dns.TypeA)}
+	if normal == nil {
+		result.State = "ERROR"
+		return result
+	}
+	result.Authenticated = normal.AuthenticatedData
+	switch normal.Rcode {
+	case dns.RcodeSuccess:
+		result.State = "INSECURE"
+		if normal.AuthenticatedData {
+			result.State = "VALIDATED"
+		}
+	case dns.RcodeNameError:
+		result.State = "NXDOMAIN"
+	case dns.RcodeServerFailure:
+		result.State = "SERVFAIL"
+		result.CDStatus = responseStatus(checkingDisabled, dns.TypeA)
+		if checkingDisabled != nil && (checkingDisabled.Rcode == dns.RcodeSuccess || checkingDisabled.Rcode == dns.RcodeNameError) {
+			result.State = "BOGUS"
+		}
+	default:
+		result.State = "ERROR"
+	}
+	return result
 }
 
 func (r *Resolver) checkDNSSECUncached(ctx context.Context, domain string) (map[string]bool, error) {

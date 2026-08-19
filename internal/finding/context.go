@@ -31,7 +31,7 @@ func Primary(analysis *core.HostAnalysis) Context {
 		"DELEGATION_BROKEN", "STALE_CLOUD_IP_CANDIDATE",
 		"ORIGIN_DIRECT_MATCH",
 		"CLOUD_S3_WRITABLE", "CLOUD_S3_LISTABLE", "CLOUD_AZURE_BLOB_LISTABLE", "CLOUD_GCS_LISTABLE",
-		"MX_BROKEN", "MX_DANGLING", "MX_UNRESOLVABLE",
+		"MX_BROKEN", "MX_PRIMARY_BROKEN_WITH_FALLBACK", "MX_BACKUP_BROKEN", "MX_DANGLING", "MX_UNRESOLVABLE",
 		"SRV_BROKEN", "SRV_DANGLING", "SRV_UNRESOLVABLE",
 		"SPF_DANGLING_TAKEOVER", "SPF_BROKEN_INCLUDE", "SPF_INCLUDE_WITHOUT_POLICY",
 		"SPF_LOOKUP_LIMIT_EXCEEDED", "SPF_INCLUDE_CYCLE",
@@ -41,7 +41,7 @@ func Primary(analysis *core.HostAnalysis) Context {
 		"EMAIL_SPF_PERMISSIVE", "EMAIL_SPF_MISSING", "EMAIL_DMARC_MISSING",
 		"HTTP_HSTS_MISSING", "HTTP_CSP_MISSING",
 		"NS_ALL_DEAD", "NS_ORPHANED", "LAME_DELEGATION", "NS_REFUSED", "NS_SERVFAIL", "NS_SOA_MISMATCH",
-		"TLS_EXPIRED", "TLS_SELF_SIGNED", "TLS_MISMATCH",
+		"DNSSEC_BOGUS", "TLS_EXPIRED", "TLS_SELF_SIGNED", "TLS_MISMATCH",
 	}
 	for _, evidenceType := range priorities {
 		if evidence := byType(analysis, evidenceType); evidence.Type != "" {
@@ -107,6 +107,8 @@ func Primary(analysis *core.HostAnalysis) Context {
 		result.Vector = "HTTP"
 	case strings.HasPrefix(selected.Type, "TLS_"):
 		result.Vector = "TLS"
+	case strings.HasPrefix(selected.Type, "DNSSEC_"):
+		result.Vector = "DNSSEC"
 	case strings.HasPrefix(selected.Type, "CLOUD_") || selected.Type == "STALE_CLOUD_IP_CANDIDATE":
 		result.Vector = "CLOUD"
 	case strings.HasPrefix(selected.Type, "ORIGIN_"):

@@ -13,7 +13,7 @@ import (
 )
 
 type SRVCollector struct {
-	resolver *dns.Resolver
+	resolver targetResolver
 	sigs     []signatures.Fingerprint
 }
 
@@ -25,7 +25,7 @@ var builtinSRVTargetProviders = []struct{ suffix, provider string }{
 	{"ciscospark.com", "Cisco Webex"},
 }
 
-func NewSRVCollector(resolver *dns.Resolver, sigs []signatures.Fingerprint) *SRVCollector {
+func NewSRVCollector(resolver targetResolver, sigs []signatures.Fingerprint) *SRVCollector {
 	return &SRVCollector{resolver: resolver, sigs: sigs}
 }
 
@@ -45,28 +45,44 @@ func (c *SRVCollector) Collect(ctx context.Context, analysis *core.HostAnalysis)
 		}
 		candidate := core.SRVCandidate{
 			Record: record, RegistrableDomain: dns.ExtractRootDomain(record.Target),
-			Ownership: externalTargetOwnership(record.Target), RegistrationStatus: "NOT_CHECKED",
+			FinalTarget: record.Target,
+			Ownership:   externalTargetOwnership(record.Target), RegistrationStatus: "NOT_CHECKED",
 			Claimability: core.ClaimabilityNotVerified,
 		}
+		candidate.CNAME, _ = c.resolver.ResolveCNAMEChain(ctx, record.Target)
+		if len(candidate.CNAME) > 0 {
+			candidate.FinalTarget = candidate.CNAME[len(candidate.CNAME)-1]
+		}
+		names := append([]string{record.Target}, candidate.CNAME...)
 		for _, rule := range builtinSRVTargetProviders {
-			if dnsSuffixMatch(record.Target, rule.suffix) {
-				candidate.Provider, candidate.ProviderID = rule.provider, providerID(rule.provider)
-				candidate.Ownership = "PROVIDER_OWNED"
-				addSRVProviderEvidence(analysis, candidate, 95)
+			for _, name := range names {
+				if dnsSuffixMatch(name, rule.suffix) {
+					candidate.Provider, candidate.ProviderID = rule.provider, providerID(rule.provider)
+					candidate.Ownership = "PROVIDER_OWNED"
+					addSRVProviderEvidence(analysis, candidate, 95)
+					break
+				}
+			}
+			if candidate.ProviderID != "" {
 				break
 			}
 		}
 		if candidate.ProviderID == "" {
 			for _, sig := range c.sigs {
 				for _, fingerprint := range sig.SRVFingerprints {
-					if domainutil.MatchDNSProviderPattern(record.Target, fingerprint) {
-						candidate.Provider, candidate.ProviderID = sig.Service, providerID(sig.Service)
-						candidate.Ownership = "PROVIDER_OWNED"
-						confidence := sig.SRVConfidence
-						if confidence == 0 {
-							confidence = sig.Confidence
+					for _, name := range names {
+						if domainutil.MatchDNSProviderPattern(name, fingerprint) {
+							candidate.Provider, candidate.ProviderID = sig.Service, providerID(sig.Service)
+							candidate.Ownership = "PROVIDER_OWNED"
+							confidence := sig.SRVConfidence
+							if confidence == 0 {
+								confidence = sig.Confidence
+							}
+							addSRVProviderEvidence(analysis, candidate, confidence)
+							break
 						}
-						addSRVProviderEvidence(analysis, candidate, confidence)
+					}
+					if candidate.ProviderID != "" {
 						break
 					}
 				}
@@ -75,7 +91,7 @@ func (c *SRVCollector) Collect(ctx context.Context, analysis *core.HostAnalysis)
 				}
 			}
 		}
-		candidate.DNSStatus = c.resolver.ResolveAddressStatus(ctx, record.Target)
+		candidate.DNSStatus = c.resolver.ResolveAddressStatus(ctx, candidate.FinalTarget)
 		if candidate.ProviderID != "" {
 			analysis.AddProviderCandidate(core.ProviderCandidate{
 				ProviderID: candidate.ProviderID, Service: candidate.Provider,
@@ -91,6 +107,7 @@ func (c *SRVCollector) Collect(ctx context.Context, analysis *core.HostAnalysis)
 				Weight:      20, Confidence: 90,
 				Metadata: map[string]string{
 					"srv_owner": record.Owner, "srv_target": record.Target,
+					"final_target": candidate.FinalTarget, "cname_chain": strings.Join(candidate.CNAME, ","),
 					"priority": strconv.Itoa(int(record.Priority)), "weight": strconv.Itoa(int(record.Weight)), "port": strconv.Itoa(int(record.Port)),
 					"dns_status": string(candidate.DNSStatus), "registration_status": candidate.RegistrationStatus,
 					"ownership": candidate.Ownership, "claimability": string(candidate.Claimability),
@@ -101,7 +118,10 @@ func (c *SRVCollector) Collect(ctx context.Context, analysis *core.HostAnalysis)
 				Type: "SRV_UNRESOLVABLE", Source: "DNS",
 				Description: fmt.Sprintf("O destino SRV %s não pôde ser avaliado de forma confiável (%s)", record.Target, candidate.DNSStatus),
 				Weight:      1, Confidence: 40,
-				Metadata: map[string]string{"srv_owner": record.Owner, "srv_target": record.Target, "dns_status": string(candidate.DNSStatus)},
+				Metadata: map[string]string{
+					"srv_owner": record.Owner, "srv_target": record.Target, "final_target": candidate.FinalTarget,
+					"cname_chain": strings.Join(candidate.CNAME, ","), "dns_status": string(candidate.DNSStatus),
+				},
 			})
 		}
 		analysis.SRVCandidates = append(analysis.SRVCandidates, candidate)
