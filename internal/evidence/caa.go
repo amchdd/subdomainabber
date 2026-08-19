@@ -32,33 +32,30 @@ func (collector *CAACollector) Collect(ctx context.Context, analysis *core.HostA
 	analysis.AddTestedVector("CAA")
 	hostPolicy := caaPolicy(analysis.DNS.CAA)
 	root := dns.ExtractRootDomain(analysis.Host)
-	var zoneRecords []string
-	if collector.resolver != nil && root != "" && !strings.EqualFold(root, analysis.Host) {
-		if records, err := collector.resolver.ResolveCAA(ctx, root); err == nil {
-			zoneRecords = records
-		}
-	}
-	zonePolicy := caaPolicy(zoneRecords)
+	parentRecords, parentZone := parentCAA(ctx, collector.resolver, analysis.Host, root)
+	parentPolicy := caaPolicy(parentRecords)
 	effectiveRecords := analysis.DNS.CAA
 	effectivePolicy := hostPolicy
+	effectiveZone := analysis.Host
 	if len(effectiveRecords) == 0 {
-		effectiveRecords = zoneRecords
-		effectivePolicy = zonePolicy
+		effectiveRecords = parentRecords
+		effectivePolicy = parentPolicy
+		effectiveZone = parentZone
 	}
 	if len(effectivePolicy) > 0 {
 		analysis.AddEvidence(core.Evidence{
 			Type: "CAA_RECORD_PRESENT", Source: "DNS",
 			Description: "A política CAA restringe as autoridades certificadoras permitidas.",
 			Weight:      10, Confidence: 100, IsNegative: true,
-			Metadata: map[string]string{"policy": strings.Join(effectivePolicy, ","), "zone": root},
+			Metadata: map[string]string{"policy": strings.Join(effectivePolicy, ","), "zone": effectiveZone},
 		})
 	}
-	if len(hostPolicy) > 0 && len(zonePolicy) > 0 && !sameStrings(hostPolicy, zonePolicy) {
+	if len(hostPolicy) > 0 && len(parentPolicy) > 0 && !sameStrings(hostPolicy, parentPolicy) {
 		analysis.AddEvidence(core.Evidence{
 			Type: "CAA_POLICY_INCONSISTENT", Source: "DNS",
-			Description: "As políticas CAA do hostname e da zona registrável são diferentes.",
+			Description: "As políticas CAA do hostname e do ancestral mais próximo são diferentes.",
 			Weight:      0, Confidence: 100,
-			Metadata: map[string]string{"host_issuers": strings.Join(hostPolicy, ","), "zone_issuers": strings.Join(zonePolicy, ","), "zone": root},
+			Metadata: map[string]string{"host_issuers": strings.Join(hostPolicy, ","), "zone_issuers": strings.Join(parentPolicy, ","), "zone": parentZone},
 		})
 	}
 	issuer := tlsIssuer(analysis.Evidences)
@@ -73,6 +70,30 @@ func (collector *CAACollector) Collect(ctx context.Context, analysis *core.HostA
 		})
 	}
 	return nil
+}
+
+func parentCAA(ctx context.Context, resolver caaResolver, host, root string) ([]string, string) {
+	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	root = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(root), "."))
+	if resolver == nil || host == "" || root == "" || host == root {
+		return nil, ""
+	}
+	hostLabels := strings.Split(host, ".")
+	rootLabels := strings.Split(root, ".")
+	if len(hostLabels) <= len(rootLabels) || strings.Join(hostLabels[len(hostLabels)-len(rootLabels):], ".") != root {
+		return nil, ""
+	}
+	for offset := 1; offset <= len(hostLabels)-len(rootLabels); offset++ {
+		parent := strings.Join(hostLabels[offset:], ".")
+		records, err := resolver.ResolveCAA(ctx, parent)
+		if err != nil {
+			return nil, ""
+		}
+		if len(records) > 0 {
+			return records, parent
+		}
+	}
+	return nil, ""
 }
 
 func caaPolicy(records []string) []string {
