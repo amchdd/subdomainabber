@@ -186,7 +186,7 @@ Use "{{.CommandPath}} [comando] --help" para obter mais informações sobre um c
 	rootCmd.Flags().Bool("version", false, "Exibe a versão do SubdomainAbber")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Habilitar saída verbosa e mensagens de depuração no stderr")
 	rootCmd.PersistentFlags().BoolVar(&silent, "silent", false, "Modo silencioso — suprime banner e logs, imprime apenas resultados")
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Caminho para banco SQLite de deduplicação (padrão subdomainabber.db)")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Caminho para o banco SQLite de resultados e execuções (padrão subdomainabber.db)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Desabilitar cores ANSI na saída da CLI")
 	rootCmd.PersistentFlags().StringVar(&discordMinSeverity, "discord-min-severity", "", "Severidade mínima do Discord: info, low, medium, high ou critical")
 }

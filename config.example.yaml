@@ -16,7 +16,8 @@ resolvers_file: ""
 proxy: ""
 check_ns: false
 no_wildcard_filter: false
-follow_redirects: false
+follow_redirects: true
+redirect_depth: 10
 user_agent: SubdomainAbber/v0.1.0-alpha
 doh: ""
 headers: false
@@ -32,6 +33,8 @@ daemon: ""
 discord_webhook: ""
 discord_min_severity: medium
 telegram: ""
+webhook: ""
+webhook_secret: ""
 
 # APIs de coleta passiva
 alienvault_token: ""

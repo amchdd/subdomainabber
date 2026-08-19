@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/amchdd/subdomainabber/internal/benchmark"
@@ -26,6 +27,30 @@ var syntheticCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(benchmarkCmd)
 	benchmarkCmd.AddCommand(syntheticCmd)
+	benchmarkCmd.AddCommand(&cobra.Command{
+		Use:   "corpus [diretório]",
+		Short: "Valida o corpus versionado de precisão sem acessar a rede",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := "datasets/corpus"
+			if len(args) == 1 {
+				path = args[0]
+			}
+			result, err := benchmark.RunCorpus(path)
+			if err != nil {
+				return err
+			}
+			encoder := json.NewEncoder(cmd.OutOrStdout())
+			encoder.SetIndent("", "  ")
+			if err := encoder.Encode(result); err != nil {
+				return err
+			}
+			if result.Failed > 0 {
+				return fmt.Errorf("o corpus encontrou %d regressão(ões)", result.Failed)
+			}
+			return nil
+		},
+	})
 	benchmarkCmd.AddCommand(&cobra.Command{
 		Use:   "mutator",
 		Short: "Mede o HTTP Mutator em cenários locais controlados de borda e servidor de origem",

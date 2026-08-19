@@ -1,6 +1,31 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func TestDefaultsEnableRedirectAnalysis(t *testing.T) {
+	cfg := Defaults()
+	if !cfg.FollowRedirects || cfg.RedirectDepth != 10 {
+		t.Fatalf("análise padrão de redirects inesperada: %#v", cfg)
+	}
+}
+
+func TestMergeHonorsExplicitRedirectDisable(t *testing.T) {
+	path := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(path, []byte("follow_redirects: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := Merge(Defaults(), file)
+	if merged.FollowRedirects {
+		t.Fatal("follow_redirects: false não desabilitou a análise")
+	}
+}
 
 func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	t.Setenv("SABBER_AWS_ACCESS_KEY", "temporary-access")
@@ -8,10 +33,13 @@ func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	t.Setenv("SABBER_AWS_SESSION_TOKEN", "temporary-session")
 	t.Setenv("SABBER_AWS_REGION", "sa-east-1")
 	t.Setenv("SABBER_FOLLOW_REDIRECTS", "true")
+	t.Setenv("SABBER_REDIRECT_DEPTH", "7")
 	t.Setenv("SABBER_FETCH_HEADERS", "true")
 	t.Setenv("SABBER_USER_AGENT", "SubdomainAbber/config-test")
 	t.Setenv("SABBER_DISCORD_MIN_SEVERITY", "high")
 	t.Setenv("SABBER_NO_COLOR", "true")
+	t.Setenv("SABBER_WEBHOOK", "https://hooks.example.test/eventos")
+	t.Setenv("SABBER_WEBHOOK_SECRET", "segredo-webhook")
 
 	cfg := Defaults()
 	if err := ApplyEnv(cfg); err != nil {
@@ -20,11 +48,14 @@ func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	if cfg.AwsAccessKey != "temporary-access" || cfg.AwsSecretKey != "temporary-secret" || cfg.AwsSessionToken != "temporary-session" || cfg.AwsRegion != "sa-east-1" {
 		t.Fatalf("AWS environment was not applied: %#v", cfg)
 	}
-	if !cfg.FollowRedirects || !cfg.FetchHeaders || cfg.UserAgent != "SubdomainAbber/config-test" {
+	if !cfg.FollowRedirects || cfg.RedirectDepth != 7 || !cfg.FetchHeaders || cfg.UserAgent != "SubdomainAbber/config-test" {
 		t.Fatalf("HTTP environment was not applied: %#v", cfg)
 	}
 	if cfg.DiscordMinSeverity != "high" || !cfg.NoColor {
 		t.Fatalf("output environment was not applied: %#v", cfg)
+	}
+	if cfg.WebhookURL != "https://hooks.example.test/eventos" || cfg.WebhookSecret != "segredo-webhook" {
+		t.Fatalf("configuração do webhook não foi aplicada: %#v", cfg)
 	}
 
 	merged := Merge(Defaults(), &Config{AwsSessionToken: "merged-session"})

@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/dns"
+	"github.com/amchdd/subdomainabber/internal/domainutil"
+	"github.com/amchdd/subdomainabber/internal/storage"
 )
 
 const maxScanInputLine = 1024 * 1024
@@ -84,6 +87,101 @@ func scanDomainLines(reader io.Reader, source string, add func(string, string, i
 	return nil
 }
 
+func streamScanDomains(args []string, listPath string, stdin io.Reader, readStdin bool, batchSize int, run func([]string) error) error {
+	if batchSize < 1 || batchSize > 100000 {
+		return fmt.Errorf("--batch-size deve estar entre 1 e 100000")
+	}
+	if run == nil {
+		return fmt.Errorf("processador de lotes ausente")
+	}
+	temp, err := os.CreateTemp("", "subdomainabber-stream-*.db")
+	if err != nil {
+		return fmt.Errorf("criando índice temporário da entrada: %w", err)
+	}
+	tempPath := temp.Name()
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+	defer os.Remove(tempPath + "-shm")
+	defer os.Remove(tempPath + "-wal")
+	seenStore, err := storage.New(tempPath)
+	if err != nil {
+		return err
+	}
+	defer seenStore.Close()
+	if _, err := seenStore.DB().Exec(`CREATE TABLE IF NOT EXISTS stream_seen (host TEXT PRIMARY KEY)`); err != nil {
+		return fmt.Errorf("criando índice temporário da entrada: %w", err)
+	}
+
+	batch := make([]string, 0, batchSize)
+	processed := 0
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		copyBatch := append([]string(nil), batch...)
+		if err := run(copyBatch); err != nil {
+			return err
+		}
+		processed += len(batch)
+		batch = batch[:0]
+		return nil
+	}
+	add := func(raw, source string, line int) error {
+		domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
+		if domain == "" || strings.HasPrefix(domain, "#") {
+			return nil
+		}
+		if !validScanDomain(domain) {
+			return fmt.Errorf("alvo inválido em %s:%d: %q", source, line, raw)
+		}
+		result, err := seenStore.DB().Exec(`INSERT OR IGNORE INTO stream_seen (host) VALUES (?)`, domain)
+		if err != nil {
+			return fmt.Errorf("indexando alvo de entrada: %w", err)
+		}
+		inserted, _ := result.RowsAffected()
+		if inserted == 0 {
+			return nil
+		}
+		batch = append(batch, domain)
+		if len(batch) == batchSize {
+			return flush()
+		}
+		return nil
+	}
+	for index, value := range args {
+		if err := add(value, "argumento", index+1); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(listPath) != "" {
+		file, err := os.Open(listPath)
+		if err != nil {
+			return fmt.Errorf("abrindo lista %q: %w", listPath, err)
+		}
+		if err := scanDomainLines(file, listPath, add); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("fechando lista %q: %w", listPath, err)
+		}
+	}
+	if readStdin && stdin != nil {
+		if err := scanDomainLines(stdin, "stdin", add); err != nil {
+			return err
+		}
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	if processed == 0 {
+		return fmt.Errorf("nenhum alvo fornecido; use argumentos, --list ou a entrada padrão (stdin)")
+	}
+	return nil
+}
+
 func validScanDomain(domain string) bool {
 	if len(domain) == 0 || len(domain) > 253 || strings.ContainsAny(domain, "/\\:@?#%") {
 		return false
@@ -114,6 +212,116 @@ func validScanDomain(domain string) bool {
 		}
 	}
 	return tldHasLetter
+}
+
+func parseRelatedHosts(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, err
+	}
+	var hosts []string
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		host, err := domainutil.NormalizeHostname(item)
+		if err != nil || !validScanDomain(host) {
+			return nil, fmt.Errorf("host relacionado inválido: %q", item)
+		}
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts, nil
+}
+
+func parseSANRoots(enabled bool, raw string) ([]string, error) {
+	if !enabled {
+		if strings.TrimSpace(raw) != "" {
+			return nil, fmt.Errorf("--san-roots exige --pivot-san")
+		}
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, fmt.Errorf("--pivot-san exige --san-roots: %w", err)
+	}
+	var roots []string
+	for _, item := range items {
+		host := strings.ToLower(strings.TrimSuffix(item, "."))
+		if !validScanDomain(host) || dns.ExtractRootDomain(host) != host {
+			return nil, fmt.Errorf("raiz SAN inválida: %q", item)
+		}
+		roots = append(roots, host)
+	}
+	return roots, nil
+}
+
+func parseOriginTargets(enabled bool, raw string) ([]string, error) {
+	if !enabled {
+		if strings.TrimSpace(raw) != "" {
+			return nil, fmt.Errorf("--origin-allowlist exige --check-origin")
+		}
+		return nil, nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, item := range items {
+		value := strings.ToLower(strings.TrimSuffix(item, "."))
+		if ip := net.ParseIP(value); ip != nil {
+			if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+				return nil, fmt.Errorf("IP de origin não público: %q", item)
+			}
+			targets = append(targets, ip.String())
+			continue
+		}
+		if !validScanDomain(value) {
+			return nil, fmt.Errorf("destino de origin inválido: %q", item)
+		}
+		targets = append(targets, value)
+	}
+	return targets, nil
+}
+
+func readList(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("a lista está vazia")
+	}
+	content := raw
+	if data, err := os.ReadFile(raw); err == nil {
+		content = string(data)
+	}
+	seen := make(map[string]struct{})
+	var items []string
+	for _, item := range strings.FieldsFunc(content, func(char rune) bool {
+		return char == ',' || char == '\n' || char == '\r'
+	}) {
+		item = strings.TrimSpace(item)
+		if item == "" || strings.HasPrefix(item, "#") {
+			continue
+		}
+		key := strings.ToLower(item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("a lista está vazia")
+	}
+	return items, nil
 }
 
 func aggressiveClaimTargets(enabled, confirmed bool, rawAllowlist string, scanDomains []string) ([]string, error) {

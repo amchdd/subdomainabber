@@ -282,6 +282,7 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 				"status":    fmt.Sprintf("%d", statusCode),
 				"title":     observation.Title,
 				"body_hash": observation.BodyHash,
+				"server":    observation.Server,
 			},
 		})
 

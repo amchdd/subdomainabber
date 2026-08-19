@@ -43,6 +43,8 @@ type domainResult struct {
 	Classification string
 	Actionable     bool
 	FatalErr       error
+	Candidates     []string
+	PolicyMatch    bool
 }
 
 type scanProgressSnapshot struct {
@@ -62,7 +64,7 @@ type scanProgressSnapshot struct {
 }
 
 type scanProgress struct {
-	total            int64
+	total            atomic.Int64
 	requestedWorkers int
 	effectiveWorkers int
 	limiter          *ratelimit.Limiter
@@ -97,8 +99,7 @@ func newScanProgress(
 	if limiter != nil {
 		initialStats = limiter.Stats()
 	}
-	return &scanProgress{
-		total:            int64(total),
+	progress := &scanProgress{
 		requestedWorkers: requestedWorkers,
 		effectiveWorkers: effectiveWorkers,
 		limiter:          limiter,
@@ -110,6 +111,8 @@ func newScanProgress(
 		classifications:  make(map[string]int64),
 		initialGranted:   initialStats.Granted,
 	}
+	progress.total.Store(int64(total))
+	return progress
 }
 
 func (progress *scanProgress) Start() {
@@ -147,6 +150,12 @@ func (progress *scanProgress) HostStarted() {
 	progress.active.Add(1)
 }
 
+func (progress *scanProgress) AddTotal(total int) {
+	if progress != nil && total > 0 {
+		progress.total.Add(int64(total))
+	}
+}
+
 func (progress *scanProgress) HostFinished(result domainResult) {
 	progress.active.Add(-1)
 	switch result.Outcome {
@@ -176,7 +185,8 @@ func (progress *scanProgress) Snapshot() scanProgressSnapshot {
 	failed := progress.failed.Load()
 	canceled := progress.canceled.Load()
 	processed := completed + skipped + failed
-	notStarted := progress.total - started
+	total := progress.total.Load()
+	notStarted := total - started
 	if notStarted < 0 {
 		notStarted = 0
 	}
@@ -194,7 +204,7 @@ func (progress *scanProgress) Snapshot() scanProgressSnapshot {
 	}
 	progress.classificationMu.Unlock()
 	return scanProgressSnapshot{
-		Total:           progress.total,
+		Total:           total,
 		Started:         started,
 		Active:          progress.active.Load(),
 		Completed:       completed,

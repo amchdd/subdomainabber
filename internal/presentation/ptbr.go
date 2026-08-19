@@ -124,6 +124,14 @@ func Value(value string) string {
 		return "ERRO"
 	case "PROVIDER_OWNED":
 		return "PERTENCE AO PROVEDOR"
+	case "PRIMARY":
+		return "PRIMÁRIO"
+	case "FALLBACK":
+		return "CONTINGÊNCIA"
+	case "POSSIBLY_RESIDUAL":
+		return "POSSIVELMENTE RESIDUAL"
+	case "RELATED_PROVIDER_PRESENT":
+		return "PROVEDOR RELACIONADO PRESENTE"
 	case "EXTERNAL_UNVERIFIED":
 		return "EXTERNO NÃO VERIFICADO"
 	case "NOT_TESTED":
@@ -173,6 +181,50 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o domínio possui registros MX, mas não publica uma política SPF"
 	case "HTTP_OPEN_REDIRECT":
 		return "o host aceitou um redirecionamento para destino externo"
+	case "DANGLING_REDIRECT":
+		return "a cadeia termina em um hostname inexistente ou recurso removido"
+	case "HTTP_HTTPS_REDIRECT_MISSING":
+		return "o endpoint HTTP não faz upgrade direto para HTTPS no mesmo hostname"
+	case "HTTP_HTTPS_PORT_INCONSISTENT":
+		return "o upgrade redireciona para uma porta HTTPS não convencional"
+	case "HTTPS_DOWNGRADE_REDIRECT":
+		return "o endpoint HTTPS redireciona para HTTP"
+	case "CSP_DANGLING_DEPENDENCY":
+		return "a política CSP confia em um host órfão vinculado a provedor conhecido"
+	case "SUBRESOURCE_DANGLING", "DEAD_ASSET_REFERENCE":
+		return "a página referencia um recurso em host órfão vinculado a provedor conhecido"
+	case "DEAD_ASSET_HTTP":
+		return "a página referencia um asset que responde como removido"
+	case "ORIGIN_DIRECT_MATCH":
+		return "um destino permitido reproduziu a aplicação com o Host e o SNI originais"
+	case "ORIGIN_EXPOSURE_CANDIDATE":
+		return "um cabeçalho revelou um candidato a origin; a alcançabilidade direta não foi confirmada"
+	case "TLS_CERTIFICATE_DRIFT":
+		return "issuer, SAN ou provider mudou desde a coleta anterior"
+	case "SNI_CERT_MISMATCH":
+		return "o mesmo IP apresentou outro certificado com SNI ausente ou alternativo"
+	case "DNSSEC_BOGUS":
+		return "a validação DNSSEC falha, mas a consulta com verificação desabilitada recebe resposta"
+	case "DNSSEC_SERVFAIL_INCONCLUSIVE":
+		return "a consulta retorna SERVFAIL mesmo sem validação DNSSEC; a causa permanece inconclusiva"
+	case "MX_PRIMARY_BROKEN_WITH_FALLBACK":
+		return "o MX prioritário falhou, mas há um destino alternativo resolvível"
+	case "MX_BACKUP_BROKEN":
+		return "um MX de contingência falhou enquanto outro destino continua resolvível"
+	case "CAA_POLICY_INCONSISTENT":
+		return "as políticas CAA do hostname e da zona registrável divergem"
+	case "CAA_ISSUER_MISMATCH":
+		return "o emissor do certificado observado não aparece na política CAA efetiva"
+	case "TXT_OWNERSHIP_TOKEN_RESIDUAL":
+		return "o token de propriedade pode ser residual; isso não comprova vínculo nem exploração"
+	case "PROVIDER_MIGRATION_DETECTED":
+		return "o provedor observado mudou desde a varredura anterior"
+	case "PROVIDER_MIGRATION_STALE_REFERENCE":
+		return "a referência ao provedor anterior permanece após a migração"
+	case "RELATED_DOMAIN_COOKIE_SCOPE":
+		return "o domínio registrável define cookie com escopo que inclui o subdomínio candidato"
+	case "RELATED_DOMAIN_CORS_CREDENTIALS":
+		return "o domínio registrável confia na origem candidata e permite credenciais"
 	default:
 		return evidence.Description
 	}

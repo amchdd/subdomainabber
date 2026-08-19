@@ -29,6 +29,20 @@ func TestLoadScanDomainsCombinesAndDeduplicatesInputs(t *testing.T) {
 	}
 }
 
+func TestStreamScanDomainsUsesBoundedBatches(t *testing.T) {
+	var sizes []int
+	err := streamScanDomains([]string{"a.example", "b.example", "c.example"}, "", nil, false, 2, func(batch []string) error {
+		sizes = append(sizes, len(batch))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sizes) != 2 || sizes[0] != 2 || sizes[1] != 1 {
+		t.Fatalf("lotes inesperados: %v", sizes)
+	}
+}
+
 func TestLoadScanDomainsRejectsInvalidAndMissingInputs(t *testing.T) {
 	if _, err := loadScanDomains([]string{"https://example.com"}, "", nil, false); err == nil {
 		t.Fatal("URL was accepted as a DNS target")
@@ -51,6 +65,49 @@ func TestValidScanDomainSupportsDNSLabelsButRejectsOutOfScopeSyntax(t *testing.T
 		if validScanDomain(domain) {
 			t.Fatalf("invalid domain accepted: %q", domain)
 		}
+	}
+}
+
+func TestParseRelatedHosts(t *testing.T) {
+	hosts, err := parseRelatedHosts("Static.Example.com.,api.example.com,static.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 2 || hosts[0] != "static.example.com" || hosts[1] != "api.example.com" {
+		t.Fatalf("hosts inesperados: %#v", hosts)
+	}
+	if _, err := parseRelatedHosts("https://outside.example"); err == nil {
+		t.Fatal("URL foi aceita como hostname relacionado")
+	}
+}
+
+func TestSANRootsRequireExplicitScope(t *testing.T) {
+	if _, err := parseSANRoots(false, "example.com"); err == nil {
+		t.Fatal("--san-roots foi aceito sem --pivot-san")
+	}
+	roots, err := parseSANRoots(true, "example.com")
+	if err != nil || len(roots) != 1 || roots[0] != "example.com" {
+		t.Fatalf("raízes SAN = %#v, %v", roots, err)
+	}
+	if _, err := parseSANRoots(true, "api.example.com"); err == nil {
+		t.Fatal("subdomínio foi aceito como raiz do pivô SAN")
+	}
+}
+
+func TestOriginAllowlistRejectsPrivateIP(t *testing.T) {
+	if _, err := parseOriginTargets(false, "203.0.113.10"); err == nil {
+		t.Fatal("allowlist foi aceita sem --check-origin")
+	}
+	if _, err := parseOriginTargets(true, "10.0.0.8"); err == nil {
+		t.Fatal("IP privado foi aceito na allowlist de origin")
+	}
+}
+
+func TestQueueSANsDeduplicatesAndLimits(t *testing.T) {
+	seen := map[string]struct{}{"app.example.com": {}}
+	queued := queueSANs(seen, []string{"app.example.com", "api.example.com", "cdn.example.com"}, 1)
+	if len(queued) != 1 || queued[0] != "api.example.com" {
+		t.Fatalf("fila SAN inesperada: %#v", queued)
 	}
 }
 

@@ -94,7 +94,7 @@ var verifyCmd = &cobra.Command{
 
 		dispatcher, err := notify.NewDispatcherWithOptions(notify.DispatcherConfig{
 			Workers: 3, DiscordWebhook: cfg.DiscordWebhook, TelegramConfig: cfg.TelegramConfig,
-			MinimumSeverity: cfg.DiscordMinSeverity,
+			MinimumSeverity: cfg.DiscordMinSeverity, WebhookURL: cfg.WebhookURL, WebhookSecret: cfg.WebhookSecret,
 		})
 		if err != nil {
 			return fmt.Errorf("configuração de notificação inválida: %w", err)

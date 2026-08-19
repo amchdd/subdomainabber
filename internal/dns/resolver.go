@@ -76,6 +76,7 @@ type Resolver struct {
 	dohClient       *http.Client
 	serverConfigErr error
 	filterWildcard  bool
+	consensus       bool
 	limiter         interface{ Wait(context.Context) error }
 	timeout         time.Duration
 }
@@ -95,6 +96,28 @@ func (r *Resolver) SetDoHClient(client *http.Client) {
 
 func (r *Resolver) SetWildcardFiltering(enabled bool) {
 	r.filterWildcard = enabled
+}
+
+func (r *Resolver) SetConsensus(enabled bool) {
+	r.consensus = enabled
+}
+
+func (r *Resolver) ConsensusAvailable() bool {
+	return r != nil && r.dohURL == "" && len(r.servers) >= 2
+}
+
+func (r *Resolver) Clone() *Resolver {
+	if r == nil {
+		return nil
+	}
+	clone := New(append([]string(nil), r.servers...))
+	clone.SetDoH(r.dohURL)
+	clone.SetDoHClient(r.dohClient)
+	clone.SetWildcardFiltering(r.filterWildcard)
+	clone.SetConsensus(r.consensus)
+	clone.SetRequestLimiter(r.limiter)
+	clone.SetTimeout(r.timeout)
+	return clone
 }
 
 func (r *Resolver) SetRequestLimiter(limiter interface{ Wait(context.Context) error }) {
@@ -527,19 +550,11 @@ func (r *Resolver) ResolveCNAME(ctx context.Context, domain string) ([]string, e
 	return nil, nil
 }
 
-// ResolveCNAMEChain segue a cadeia de CNAMEs recursivamente até a profundidade
-// máxima (10) ou até que não haja mais CNAMEs. Retorna a cadeia ordenada:
-// [cname1, cname2, ..., cname_final].
-//
-// A cadeia completa permite avaliar destinos após vários saltos:
-//
-//	dev.alvo.com → cname1.alvo.com → app.herokuapp.com
-//
-// Onde apenas o último CNAME é vulnerável.
+// ResolveCNAMEChain segue CNAMEs até o destino terminal ou o limite interno.
 func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]string, error) {
 	var chain []string
 	current := domain
-	seen := make(map[string]bool) // Detecta ciclos.
+	seen := make(map[string]bool)
 
 	for depth := 0; depth < maxChainDepth; depth++ {
 		select {
@@ -550,7 +565,6 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]stri
 
 		fqdn := dns.Fqdn(current)
 
-		// Interrompe ciclos na cadeia.
 		if seen[fqdn] {
 			break
 		}
@@ -562,14 +576,12 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]stri
 
 		resp, err := r.exchange(ctx, m)
 		if err != nil {
-			// Preserva os saltos obtidos antes de uma falha intermediária.
 			if len(chain) > 0 {
 				return chain, nil
 			}
 			return nil, err
 		}
 
-		// Continua pelo primeiro CNAME da resposta.
 		var nextCNAME string
 		for _, ans := range resp.Answer {
 			if cn, ok := ans.(*dns.CNAME); ok {
@@ -579,7 +591,6 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]stri
 		}
 
 		if nextCNAME == "" {
-			// Sem outro CNAME, tenta TypeA como alternativa apenas na primeira consulta.
 			if len(chain) == 0 {
 				return r.resolveCNAMEViaA(ctx, domain)
 			}
@@ -596,6 +607,18 @@ func (r *Resolver) ResolveCNAMEChain(ctx context.Context, domain string) ([]stri
 // ResolveMX retorna a lista de servidores de e-mail configurados (MX) para o domínio.
 // É usado para detectar takeover via MX.
 func (r *Resolver) ResolveMX(ctx context.Context, fqdn string) ([]string, error) {
+	records, err := r.ResolveMXRecords(ctx, fqdn)
+	if err != nil {
+		return nil, err
+	}
+	var targets []string
+	for _, record := range records {
+		targets = append(targets, record.Target)
+	}
+	return targets, nil
+}
+
+func (r *Resolver) ResolveMXRecords(ctx context.Context, fqdn string) ([]core.MXRecord, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(fqdn), dns.TypeMX)
 	m.RecursionDesired = true
@@ -605,22 +628,28 @@ func (r *Resolver) ResolveMX(ctx context.Context, fqdn string) ([]string, error)
 		return nil, fmt.Errorf("falha ao resolver MX: %w", err)
 	}
 
-	var mxs []string
+	var records []core.MXRecord
 	if resp.Rcode == dns.RcodeSuccess {
 		for _, ans := range resp.Answer {
 			if mx, ok := ans.(*dns.MX); ok {
 				if mx.Preference == 0 && strings.TrimSpace(mx.Mx) == "." {
-					mxs = append(mxs, ".")
+					records = append(records, core.MXRecord{Target: "."})
 					continue
 				}
 				target := strings.TrimSuffix(strings.ToLower(mx.Mx), ".")
 				if target != "" {
-					mxs = append(mxs, target)
+					records = append(records, core.MXRecord{Preference: mx.Preference, Target: target})
 				}
 			}
 		}
 	}
-	return mxs, nil
+	sort.Slice(records, func(left, right int) bool {
+		if records[left].Preference == records[right].Preference {
+			return records[left].Target < records[right].Target
+		}
+		return records[left].Preference < records[right].Preference
+	})
+	return records, nil
 }
 
 // ResolveA retorna os endereços IPv4 (A) configurados para o domínio.
@@ -1076,6 +1105,57 @@ func (r *Resolver) ResolvePTR(ctx context.Context, fqdn string) ([]string, error
 	return ptrs, nil
 }
 
+func (r *Resolver) ResolveDNAME(ctx context.Context, fqdn string) ([]core.DNAMERecord, error) {
+	resp, err := r.query(ctx, fqdn, dns.TypeDNAME)
+	if err != nil {
+		return nil, err
+	}
+	var records []core.DNAMERecord
+	for _, answer := range resp.Answer {
+		if record, ok := answer.(*dns.DNAME); ok {
+			records = append(records, core.DNAMERecord{Owner: normalizeDNSName(record.Hdr.Name), Target: normalizeDNSName(record.Target)})
+		}
+	}
+	return records, nil
+}
+
+func (r *Resolver) ResolveBindings(ctx context.Context, fqdn string, qtype uint16) ([]core.ServiceBinding, error) {
+	resp, err := r.query(ctx, fqdn, qtype)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []core.ServiceBinding
+	for _, answer := range resp.Answer {
+		var record *dns.SVCB
+		switch value := answer.(type) {
+		case *dns.SVCB:
+			record = value
+		case *dns.HTTPS:
+			record = &value.SVCB
+		}
+		if record == nil {
+			continue
+		}
+		params := make(map[string]string, len(record.Value))
+		for _, value := range record.Value {
+			params[value.Key().String()] = value.String()
+		}
+		bindings = append(bindings, core.ServiceBinding{
+			Priority: record.Priority,
+			Target:   normalizeDNSName(record.Target),
+			Params:   params,
+		})
+	}
+	return bindings, nil
+}
+
+func (r *Resolver) query(ctx context.Context, name string, qtype uint16) (*dns.Msg, error) {
+	message := new(dns.Msg)
+	message.SetQuestion(dns.Fqdn(name), qtype)
+	message.RecursionDesired = true
+	return r.exchange(ctx, message)
+}
+
 // DiscoverProfile coleta concorrentemente todo o perfil DNS de um host.
 // Essa é a única saída do motor de descoberta para o restante do fluxo de processamento.
 func (r *Resolver) DiscoverProfile(ctx context.Context, host string) (core.DNSRecordSet, error) {
@@ -1110,8 +1190,38 @@ func (r *Resolver) DiscoverProfile(ctx context.Context, host string) (core.DNSRe
 	run(func() ([]string, error) { return r.ResolveA(ctx, host) }, func(res []string) { profile.A = res })
 	run(func() ([]string, error) { return r.ResolveAAAA(ctx, host) }, func(res []string) { profile.AAAA = res })
 	run(func() ([]string, error) { return r.ResolveCNAMEChain(ctx, host) }, func(res []string) { profile.CNAME = res })
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		records, err := r.ResolveDNAME(ctx, host)
+		mu.Lock()
+		defer mu.Unlock()
+		if err == nil {
+			successfulQueries++
+			profile.DNAME = records
+		} else if firstQueryErr == nil {
+			firstQueryErr = err
+		}
+	}()
 	run(func() ([]string, error) { return r.LookupNS(ctx, host) }, func(res []string) { profile.NS = res })
-	run(func() ([]string, error) { return r.ResolveMX(ctx, host) }, func(res []string) { profile.MX = res })
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		records, err := r.ResolveMXRecords(ctx, host)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			if firstQueryErr == nil {
+				firstQueryErr = err
+			}
+			return
+		}
+		successfulQueries++
+		profile.MXRecords = records
+		for _, record := range records {
+			profile.MX = append(profile.MX, record.Target)
+		}
+	}()
 	run(func() ([]string, error) { return r.ResolveTXT(ctx, host) }, func(res []string) { profile.TXT = res })
 	if looksLikeSRVOwner(host) {
 		wg.Add(1)
@@ -1140,8 +1250,36 @@ func (r *Resolver) DiscoverProfile(ctx context.Context, host string) (core.DNSRe
 	}
 	run(func() ([]string, error) { return r.ResolveSOA(ctx, host) }, func(res []string) { profile.SOA = res })
 	run(func() ([]string, error) { return r.ResolveCAA(ctx, host) }, func(res []string) { profile.CAA = res })
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		bindings, err := r.ResolveBindings(ctx, host, dns.TypeHTTPS)
+		mu.Lock()
+		defer mu.Unlock()
+		if err == nil {
+			successfulQueries++
+			profile.HTTPS = bindings
+		} else if firstQueryErr == nil {
+			firstQueryErr = err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		bindings, err := r.ResolveBindings(ctx, host, dns.TypeSVCB)
+		mu.Lock()
+		defer mu.Unlock()
+		if err == nil {
+			successfulQueries++
+			profile.SVCB = bindings
+		} else if firstQueryErr == nil {
+			firstQueryErr = err
+		}
+	}()
 
 	wg.Wait()
+	if r.consensus {
+		profile.Consensus = r.ResolveConsensus(ctx, host, dns.TypeA, dns.TypeAAAA, dns.TypeCNAME)
+	}
 	if successfulQueries == 0 {
 		if ctx.Err() != nil {
 			return profile, ctx.Err()
@@ -1301,6 +1439,54 @@ func (r *Resolver) CheckDNSSEC(ctx context.Context, domain string) (map[string]b
 		return nil, err
 	}
 	return cloneBoolMap(value.(map[string]bool)), nil
+}
+
+func (r *Resolver) DiagnoseDNSSEC(ctx context.Context, domain string) (core.DNSSECDiagnosis, error) {
+	normal := new(dns.Msg)
+	normal.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+	normal.SetEdns0(4096, true)
+	normal.RecursionDesired = true
+	response, err := r.exchange(ctx, normal)
+	if err != nil {
+		return core.DNSSECDiagnosis{}, err
+	}
+	if response.Rcode != dns.RcodeServerFailure {
+		return classifyDNSSEC(response, nil), nil
+	}
+	checkingDisabled := normal.Copy()
+	checkingDisabled.CheckingDisabled = true
+	cdResponse, err := r.exchange(ctx, checkingDisabled)
+	if err != nil {
+		return core.DNSSECDiagnosis{}, err
+	}
+	return classifyDNSSEC(response, cdResponse), nil
+}
+
+func classifyDNSSEC(normal, checkingDisabled *dns.Msg) core.DNSSECDiagnosis {
+	result := core.DNSSECDiagnosis{NormalStatus: responseStatus(normal, dns.TypeA)}
+	if normal == nil {
+		result.State = "ERROR"
+		return result
+	}
+	result.Authenticated = normal.AuthenticatedData
+	switch normal.Rcode {
+	case dns.RcodeSuccess:
+		result.State = "INSECURE"
+		if normal.AuthenticatedData {
+			result.State = "VALIDATED"
+		}
+	case dns.RcodeNameError:
+		result.State = "NXDOMAIN"
+	case dns.RcodeServerFailure:
+		result.State = "SERVFAIL"
+		result.CDStatus = responseStatus(checkingDisabled, dns.TypeA)
+		if checkingDisabled != nil && (checkingDisabled.Rcode == dns.RcodeSuccess || checkingDisabled.Rcode == dns.RcodeNameError) {
+			result.State = "BOGUS"
+		}
+	default:
+		result.State = "ERROR"
+	}
+	return result
 }
 
 func (r *Resolver) checkDNSSECUncached(ctx context.Context, domain string) (map[string]bool, error) {

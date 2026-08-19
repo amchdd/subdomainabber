@@ -25,12 +25,50 @@ const (
 	DNSStatusError    DNSStatus = "ERROR"
 )
 
+type ServiceBinding struct {
+	Priority uint16            `json:"priority"`
+	Target   string            `json:"target"`
+	Params   map[string]string `json:"params,omitempty"`
+}
+
+type DNAMERecord struct {
+	Owner  string `json:"owner"`
+	Target string `json:"target"`
+}
+
+type DNSView struct {
+	Resolver  string    `json:"resolver"`
+	Status    DNSStatus `json:"status"`
+	Answers   []string  `json:"answers,omitempty"`
+	TTL       uint32    `json:"ttl,omitempty"`
+	LatencyMs int64     `json:"latency_ms"`
+}
+
+type DNSConsensus struct {
+	QueryType string    `json:"query_type"`
+	State     string    `json:"state"`
+	Quorum    int       `json:"quorum"`
+	Views     []DNSView `json:"views"`
+}
+
+type DNSSECDiagnosis struct {
+	State         string    `json:"state"`
+	NormalStatus  DNSStatus `json:"normal_status"`
+	CDStatus      DNSStatus `json:"cd_status,omitempty"`
+	Authenticated bool      `json:"authenticated"`
+}
+
 type SRVRecord struct {
 	Owner    string `json:"owner"`
 	Priority uint16 `json:"priority"`
 	Weight   uint16 `json:"weight"`
 	Port     uint16 `json:"port"`
 	Target   string `json:"target"`
+}
+
+type MXRecord struct {
+	Preference uint16 `json:"preference"`
+	Target     string `json:"target"`
 }
 
 type DelegationNSObservation struct {
@@ -60,18 +98,25 @@ type DelegationCandidate struct {
 }
 
 type MXCandidate struct {
-	Target             string            `json:"target"`
-	ProviderID         string            `json:"provider_id,omitempty"`
-	Provider           string            `json:"provider,omitempty"`
-	DNSStatus          DNSStatus         `json:"dns_status"`
-	RegistrableDomain  string            `json:"registrable_domain,omitempty"`
-	Ownership          string            `json:"ownership"`
-	RegistrationStatus string            `json:"registration_status"`
-	Claimability       ClaimabilityState `json:"claimability"`
+	Target              string            `json:"target"`
+	Preference          uint16            `json:"preference"`
+	Role                string            `json:"role"`
+	CNAME               []string          `json:"cname,omitempty"`
+	FinalTarget         string            `json:"final_target,omitempty"`
+	HealthyAlternatives int               `json:"healthy_alternatives"`
+	ProviderID          string            `json:"provider_id,omitempty"`
+	Provider            string            `json:"provider,omitempty"`
+	DNSStatus           DNSStatus         `json:"dns_status"`
+	RegistrableDomain   string            `json:"registrable_domain,omitempty"`
+	Ownership           string            `json:"ownership"`
+	RegistrationStatus  string            `json:"registration_status"`
+	Claimability        ClaimabilityState `json:"claimability"`
 }
 
 type SRVCandidate struct {
 	Record             SRVRecord         `json:"record"`
+	CNAME              []string          `json:"cname,omitempty"`
+	FinalTarget        string            `json:"final_target,omitempty"`
 	ProviderID         string            `json:"provider_id,omitempty"`
 	Provider           string            `json:"provider,omitempty"`
 	DNSStatus          DNSStatus         `json:"dns_status"`
