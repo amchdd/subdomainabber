@@ -12,6 +12,9 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	previousEvasion := checkEvasion
 	previousFraming := checkFraming
 	previousAggressive := aggressive
+	previousVHost := checkVHost
+	previousWebDeps := checkWebDeps
+	previousFollow := followRedirects
 	previousSNI := checkSNI
 	previousOrigin := checkOrigin
 	previousSANPivot := pivotSAN
@@ -19,6 +22,9 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 		checkEvasion = previousEvasion
 		checkFraming = previousFraming
 		aggressive = previousAggressive
+		checkVHost = previousVHost
+		checkWebDeps = previousWebDeps
+		followRedirects = previousFollow
 		checkSNI = previousSNI
 		checkOrigin = previousOrigin
 		pivotSAN = previousSANPivot
@@ -37,6 +43,9 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 	if aggressive {
 		t.Fatal("--check-all enabled real auto-claim")
+	}
+	if !checkVHost || !checkWebDeps || !followRedirects {
+		t.Fatal("--check-all não habilitou as análises HTTP seguras")
 	}
 	if pivotSAN {
 		t.Fatal("--check-all habilitou pivô SAN sem allowlist")

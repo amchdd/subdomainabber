@@ -118,7 +118,7 @@ func buildVerificationRuntime(
 		allSignatures,
 		timeout,
 		cfg.Proxy,
-		profile != nil && profile.FollowRedirects,
+		profile != nil && profile.Version == 1 && profile.FollowRedirects,
 		profileUserAgent(profile),
 		profile != nil && profile.FetchHeaders,
 	)
@@ -134,6 +134,23 @@ func buildVerificationRuntime(
 		evidence.NewTXTResidualCollector(),
 		evidence.NewProviderHistoryCollector(),
 	)
+	if profile != nil && profile.Version >= 2 {
+		if profile.FollowRedirects {
+			redirects := evidence.NewRedirectCollector(resolver, sharedClient, profile.RedirectDepth)
+			redirects.SetAllowedHosts(profile.RelatedHosts)
+			collectors = append(collectors, redirects)
+		}
+		collectors = append(collectors, evidence.NewHTTPPostureCollector())
+		if profile.CheckVHost {
+			collectors = append(collectors, evidence.NewVHostCollector(sharedClient))
+		}
+		if profile.CheckWebDeps {
+			deps := evidence.NewWebDependencyCollector(resolver, sharedClient)
+			deps.SetAllowedHosts(profile.RelatedHosts)
+			deps.SetSignatures(allSignatures)
+			collectors = append(collectors, deps)
+		}
+	}
 	if profile != nil && profile.Version >= 2 && profile.CheckOrigin {
 		var originTransport evidence.HTTPRawTransport
 		if len(profile.OriginTargets) > 0 {

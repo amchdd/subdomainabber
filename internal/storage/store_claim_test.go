@@ -84,6 +84,7 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 		TestedVectors:  []string{"DNS", "HTTP", "TLS"},
 		ScanProfile: &core.ScanProfile{
 			Version: 2, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
+			FollowRedirects: true, RedirectDepth: 7, RelatedHosts: []string{"static.example.com"}, CheckWebDeps: true,
 			CheckSNI: true, PivotSAN: true, SANRoots: []string{"example.com"}, CheckOrigin: true,
 			OriginTargets: []string{"203.0.113.10"},
 		},

@@ -124,7 +124,9 @@ func Classify(analysis *core.HostAnalysis) string {
 	// classificados como configuração incorreta.
 	if has("NS_REFUSED") || has("NS_SERVFAIL") || has("NS_ALL_DEAD") || has("NS_ORPHANED") || has("LAME_DELEGATION") || has("MX_UNRESOLVABLE") || has("NS_SOA_MISMATCH") ||
 		has("MX_BROKEN") || has("MX_PRIMARY_BROKEN_WITH_FALLBACK") || has("MX_BACKUP_BROKEN") || has("SRV_BROKEN") || has("MX_DANGLING") || has("SRV_DANGLING") || has("DNSSEC_BOGUS") || has("SPF_BROKEN_INCLUDE") || has("SPF_DANGLING_TAKEOVER") || has("SPF_INCLUDE_WITHOUT_POLICY") || has("SPF_INCLUDE_CYCLE") || has("SPF_LOOKUP_LIMIT_EXCEEDED") ||
-		has("EMAIL_SPF_PERMISSIVE") || has("HTTP_OPEN_REDIRECT") {
+		has("EMAIL_SPF_PERMISSIVE") || has("HTTP_OPEN_REDIRECT") || has("DANGLING_REDIRECT") ||
+		has("HTTP_HTTPS_REDIRECT_MISSING") || has("HTTP_HTTPS_PORT_INCONSISTENT") || has("HTTPS_DOWNGRADE_REDIRECT") ||
+		has("CSP_DANGLING_DEPENDENCY") || has("SUBRESOURCE_DANGLING") || has("DEAD_ASSET_REFERENCE") || has("DEAD_ASSET_HTTP") {
 		return LevelMisconfigured
 	}
 
@@ -172,6 +174,12 @@ func hasOnlyContextEvidence(evidences []core.Evidence) bool {
 		"HTTP_RESPONSE":                      {},
 		"HTTP_HSTS_MISSING":                  {},
 		"HTTP_CSP_MISSING":                   {},
+		"HTTP_REDIRECT_HOP":                  {},
+		"REDIRECT_TARGET_OUT_OF_SCOPE":       {},
+		"REDIRECT_DEPTH_LIMIT":               {},
+		"HTTPS_UNAVAILABLE":                  {},
+		"VHOST_DIFFERENTIAL":                 {},
+		"HTTP_WILDCARD_DETECTED":             {},
 		"MX_PROVIDER_MATCH":                  {},
 		"NULL_MX_PRESENT":                    {},
 		"NS_PROVIDER_MATCH":                  {},

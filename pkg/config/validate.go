@@ -33,6 +33,9 @@ func ValidateRuntime(cfg *Config) error {
 	if cfg.RateLimit <= 0 {
 		return fmt.Errorf("rate_limit deve ser maior que zero; o limite de segurança não pode ser desabilitado (valor recebido: %d)", cfg.RateLimit)
 	}
+	if cfg.RedirectDepth < 1 || cfg.RedirectDepth > 20 {
+		return fmt.Errorf("redirect_depth deve estar entre 1 e 20 (valor recebido: %d)", cfg.RedirectDepth)
+	}
 	if err := validateDoHURL(cfg.DoH); err != nil {
 		return err
 	}

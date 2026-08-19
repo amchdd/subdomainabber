@@ -13,6 +13,9 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - raciocínio de fallback MX, seguimento de CNAME em destinos SRV e correlação entre CAA e emissor TLS;
 - classificação de falhas DNSSEC e comparação histórica de certificados e provedores entre varreduras;
 - descoberta de tokens TXT residuais sem promover observação isolada a prova de controle;
+- análise de cadeias HTTP com evidência por hop, limite configurável e detecção de destino sem resolução ou recurso removido;
+- comparação de vhost para identificar wildcard HTTP e backend padrão;
+- correlação de CSP e subrecursos HTML com CNAME, estado DNS, provedor e resposta de assets relacionados;
 - comparação TLS com SNI ausente e alternativo, descoberta controlada de SANs e histórico de drift do certificado;
 - correlação de possíveis origens atrás de CDN/WAF com confirmação direta limitada aos endereços informados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
