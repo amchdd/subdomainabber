@@ -107,7 +107,7 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 				chain.StoppedReason = "OUT_OF_SCOPE"
 				analysis.AddEvidence(core.Evidence{
 					Type: "REDIRECT_TARGET_OUT_OF_SCOPE", Source: scheme,
-					Description: "A cadeia apontou para um hostname não autorizado para sondagem adicional.",
+					Description: "A cadeia apontou para um hostname não incluído em --related-hosts; a consulta foi interrompida.",
 					Weight:      0, Confidence: 100,
 					Metadata: map[string]string{"target_url": next.String(), "target_host": nextHost},
 				})

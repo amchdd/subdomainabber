@@ -25,18 +25,19 @@ func (*HTTPPostureCollector) Collect(_ context.Context, analysis *core.HostAnaly
 
 	if hasHTTP && httpObservation.Complete {
 		location := firstWebHeader(httpObservation.Headers, "Location")
-		if !isRedirectStatus(httpObservation.StatusCode) || !isHTTPSLocation(location, analysis.Host) {
+		upgradeURL, upgraded := httpUpgradeURL(analysis, location)
+		if !isRedirectStatus(httpObservation.StatusCode) || !upgraded {
 			analysis.AddEvidence(core.Evidence{
 				Type: "HTTP_HTTPS_REDIRECT_MISSING", Source: "http",
-				Description: "O endpoint HTTP não redireciona de forma direta para HTTPS no mesmo hostname.",
+				Description: "O endpoint HTTP não conclui o redirecionamento em HTTPS.",
 				Weight:      0, Confidence: 100,
 				Metadata: map[string]string{"status": strconv.Itoa(httpObservation.StatusCode), "location": location},
 			})
-		} else if inconsistentHTTPSPort(location) {
+		} else if inconsistentHTTPSPort(upgradeURL) {
 			analysis.AddEvidence(core.Evidence{
 				Type: "HTTP_HTTPS_PORT_INCONSISTENT", Source: "http",
 				Description: "O redirecionamento de upgrade usa uma porta HTTPS não convencional.",
-				Weight:      0, Confidence: 100, Metadata: map[string]string{"location": location},
+				Weight:      0, Confidence: 100, Metadata: map[string]string{"location": upgradeURL},
 			})
 		}
 	}
@@ -71,9 +72,18 @@ func firstWebHeader(headers map[string][]string, name string) string {
 	return ""
 }
 
-func isHTTPSLocation(location, host string) bool {
-	parsed, err := url.Parse(location)
-	return err == nil && strings.EqualFold(parsed.Scheme, "https") && sameWebHost(parsed.Hostname(), host)
+func httpUpgradeURL(analysis *core.HostAnalysis, location string) (string, bool) {
+	if chain, ok := analysis.Redirects["http"]; ok {
+		if finalURL := strings.TrimSpace(chain.FinalURL); isHTTPSURL(finalURL) {
+			return finalURL, true
+		}
+	}
+	return location, isHTTPSURL(location)
+}
+
+func isHTTPSURL(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && strings.EqualFold(parsed.Scheme, "https") && parsed.Hostname() != ""
 }
 
 func inconsistentHTTPSPort(location string) bool {

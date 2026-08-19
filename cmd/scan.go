@@ -421,7 +421,6 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		httpCollector,
 		cookieCollector,
 		corsCollector,
-		evidence.NewHTTPPostureCollector(),
 	}
 	var redirectCollector *evidence.RedirectCollector
 	if cfg.FollowRedirects {
@@ -429,6 +428,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		redirectCollector.SetAllowedHosts(webHosts)
 		collectors = append(collectors, redirectCollector)
 	}
+	collectors = append(collectors, evidence.NewHTTPPostureCollector())
 	if checkVHost {
 		collectors = append(collectors, evidence.NewVHostCollector(globalClient))
 	}

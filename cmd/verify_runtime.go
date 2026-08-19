@@ -129,12 +129,12 @@ func buildVerificationRuntime(
 		httpCollector,
 	)
 	if profile != nil && profile.Version >= 2 {
-		collectors = append(collectors, evidence.NewHTTPPostureCollector())
 		if profile.FollowRedirects {
 			redirects := evidence.NewRedirectCollector(resolver, sharedClient, profile.RedirectDepth)
 			redirects.SetAllowedHosts(profile.RelatedHosts)
 			collectors = append(collectors, redirects)
 		}
+		collectors = append(collectors, evidence.NewHTTPPostureCollector())
 		if profile.CheckVHost {
 			collectors = append(collectors, evidence.NewVHostCollector(sharedClient))
 		}
