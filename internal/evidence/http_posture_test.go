@@ -21,6 +21,38 @@ func TestPostureMissingUpgrade(t *testing.T) {
 	}
 }
 
+func TestPostureAcceptsCanonicalHTTPSRedirect(t *testing.T) {
+	analysis := &core.HostAnalysis{Host: "example.test"}
+	analysis.SetHTTPObservation("http", newHTTPObservation("http", http.StatusMovedPermanently,
+		http.Header{"Location": []string{"https://www.example.test/"}}, nil, true, 0, "", ""))
+	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusOK, nil, nil, true, 0, "", ""))
+
+	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "HTTP_HTTPS_REDIRECT_MISSING") {
+		t.Fatalf("upgrade para hostname canônico foi marcado como ausente: %+v", analysis.Evidences)
+	}
+}
+
+func TestPostureAcceptsHTTPSAtEndOfChain(t *testing.T) {
+	analysis := &core.HostAnalysis{Host: "app.example.test"}
+	analysis.SetHTTPObservation("http", newHTTPObservation("http", http.StatusFound,
+		http.Header{"Location": []string{"/login"}}, nil, true, 0, "", ""))
+	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusOK, nil, nil, true, 0, "", ""))
+	analysis.SetRedirectChain("http", core.RedirectChain{
+		Scheme:   "http",
+		FinalURL: "https://app.example.test/login",
+	})
+
+	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "HTTP_HTTPS_REDIRECT_MISSING") {
+		t.Fatalf("upgrade concluído na cadeia foi marcado como ausente: %+v", analysis.Evidences)
+	}
+}
+
 func TestPostureDowngrade(t *testing.T) {
 	analysis := &core.HostAnalysis{Host: "app.example.test"}
 	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusFound,

@@ -125,6 +125,24 @@ func TestRedirectStopsOutsideScope(t *testing.T) {
 	}
 }
 
+func TestRedirectStopsAtSiblingWithoutRelatedHost(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return webResponse(request, http.StatusFound, "https://admin.example.test/", ""), nil
+	})}
+	resolver := &fakeWebResolver{}
+	analysis := &core.HostAnalysis{Host: "app.example.test"}
+	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusFound, nil, nil, true, 0, "", ""))
+
+	if err := NewRedirectCollector(resolver, client, 5).Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || len(resolver.calls) != 0 || !hasEvidenceType(analysis.Evidences, "REDIRECT_TARGET_OUT_OF_SCOPE") {
+		t.Fatalf("hostname irmão não listado foi consultado: requisições=%d DNS=%v evidências=%+v", requests, resolver.calls, analysis.Evidences)
+	}
+}
+
 func webResponse(request *http.Request, status int, location, body string) *http.Response {
 	header := make(http.Header)
 	if location != "" {

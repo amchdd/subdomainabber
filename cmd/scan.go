@@ -550,7 +550,6 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 		httpCollector,
 		cookieCollector,
 		corsCollector,
-		evidence.NewHTTPPostureCollector(),
 		evidence.NewTXTResidualCollector(),
 		evidence.NewProviderHistoryCollector(),
 	}
@@ -560,6 +559,7 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 		redirectCollector.SetAllowedHosts(webHosts)
 		collectors = append(collectors, redirectCollector)
 	}
+	collectors = append(collectors, evidence.NewHTTPPostureCollector())
 	if checkVHost {
 		collectors = append(collectors, evidence.NewVHostCollector(globalClient))
 	}

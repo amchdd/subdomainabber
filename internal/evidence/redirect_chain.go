@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
-	"github.com/amchdd/subdomainabber/internal/dns"
 )
 
 const maxRedirectDepth = 20
@@ -103,12 +102,13 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 		}
 		nextHost := normalizeWebHost(next.Hostname())
 		if !sameWebHost(nextHost, analysis.Host) {
-			if _, ok := collector.allowed[nextHost]; !ok && !sameWebRoot(nextHost, analysis.Host) {
+			if _, ok := collector.allowed[nextHost]; !ok {
 				chain.FinalURL = next.String()
 				chain.StoppedReason = "OUT_OF_SCOPE"
 				analysis.AddEvidence(core.Evidence{
-					Type: "REDIRECT_TARGET_OUT_OF_SCOPE", Source: scheme,
-					Description: "A cadeia apontou para um hostname externo que não será consultado.",
+					Type:        "REDIRECT_TARGET_OUT_OF_SCOPE",
+					Source:      scheme,
+					Description: "A cadeia apontou para um hostname não incluído em --related-hosts; a consulta foi interrompida.",
 					Weight:      0, Confidence: 100,
 					Metadata: map[string]string{"target_url": next.String(), "target_host": nextHost},
 				})
@@ -148,11 +148,6 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 		})
 	}
 	analysis.SetRedirectChain(scheme, chain)
-}
-
-func sameWebRoot(left, right string) bool {
-	leftRoot, rightRoot := dns.ExtractRootDomain(left), dns.ExtractRootDomain(right)
-	return leftRoot != "" && leftRoot == rightRoot
 }
 
 func (collector *RedirectCollector) targetStatus(ctx context.Context, host string) core.DNSStatus {
