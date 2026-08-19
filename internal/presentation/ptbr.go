@@ -190,7 +190,7 @@ func EvidenceDescription(evidence core.Evidence) string {
 	case "MX_BACKUP_BROKEN":
 		return "um MX de contingência falhou enquanto outro destino continua resolvível"
 	case "CAA_POLICY_INCONSISTENT":
-		return "as políticas CAA do hostname e da zona registrável divergem"
+		return "as políticas CAA do hostname e do ancestral mais próximo divergem"
 	case "CAA_ISSUER_MISMATCH":
 		return "o emissor do certificado observado não aparece na política CAA efetiva"
 	case "TXT_OWNERSHIP_TOKEN_RESIDUAL":
@@ -199,6 +199,14 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "o provedor observado mudou desde a varredura anterior"
 	case "PROVIDER_MIGRATION_STALE_REFERENCE":
 		return "a referência ao provedor anterior permanece após a migração"
+	case "ORIGIN_DIRECT_MATCH":
+		return "um destino permitido reproduziu a aplicação com o Host e o SNI originais"
+	case "ORIGIN_EXPOSURE_CANDIDATE":
+		return "um cabeçalho revelou um candidato a origin; a alcançabilidade direta não foi confirmada"
+	case "TLS_CERTIFICATE_DRIFT":
+		return "issuer, SAN ou provider mudou desde a coleta anterior"
+	case "SNI_CERT_MISMATCH":
+		return "o mesmo IP apresentou outro certificado com SNI ausente ou alternativo"
 	default:
 		return evidence.Description
 	}

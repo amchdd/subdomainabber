@@ -29,6 +29,7 @@ func Primary(analysis *core.HostAnalysis) Context {
 		"HTTP_MUTATION_REVEALED_PROVIDER_FINGERPRINT", "HTTP_BODY_MATCH",
 		"DELEGATION_TAKEOVER_CANDIDATE", "DNS_AXFR_ALLOWED", "CNAME_DANGLING",
 		"DELEGATION_BROKEN", "STALE_CLOUD_IP_CANDIDATE",
+		"ORIGIN_DIRECT_MATCH",
 		"CLOUD_S3_WRITABLE", "CLOUD_S3_LISTABLE", "CLOUD_AZURE_BLOB_LISTABLE", "CLOUD_GCS_LISTABLE",
 		"MX_BROKEN", "MX_PRIMARY_BROKEN_WITH_FALLBACK", "MX_BACKUP_BROKEN", "MX_DANGLING", "MX_UNRESOLVABLE",
 		"SRV_BROKEN", "SRV_DANGLING", "SRV_UNRESOLVABLE",
@@ -106,6 +107,11 @@ func Primary(analysis *core.HostAnalysis) Context {
 		result.Vector = "DNSSEC"
 	case strings.HasPrefix(selected.Type, "CLOUD_") || selected.Type == "STALE_CLOUD_IP_CANDIDATE":
 		result.Vector = "CLOUD"
+	case strings.HasPrefix(selected.Type, "ORIGIN_"):
+		result.Vector = "ORIGIN"
+		if selected.Metadata["target"] != "" {
+			result.Resource = selected.Metadata["target"]
+		}
 	case selected.Type == "SHADOW_IT_DETECTED":
 		result.Vector = "SHADOW_IT"
 	}

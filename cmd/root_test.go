@@ -52,7 +52,7 @@ func TestCobraErrorsArePresentedInPortuguese(t *testing.T) {
 }
 
 func TestReleaseCLIExposesOnlyImplementedScanFlags(t *testing.T) {
-	for _, name := range []string{"evasion", "list", "discord-webhook", "aggressive", "aggressive-confirm-auto-claim", "aggressive-allowlist"} {
+	for _, name := range []string{"evasion", "list", "discord-webhook", "check-sni", "pivot-san", "san-roots", "check-origin", "origin-allowlist", "aggressive", "aggressive-confirm-auto-claim", "aggressive-allowlist"} {
 		if scanCmd.Flags().Lookup(name) == nil {
 			t.Fatalf("implemented --%s flag is missing", name)
 		}

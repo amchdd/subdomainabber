@@ -19,8 +19,9 @@ type Options struct {
 }
 
 type humanFinding struct {
-	rank int
-	body string
+	rank    int
+	body    string
+	summary string
 }
 
 type fieldLine struct {
@@ -43,7 +44,10 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 	var findings []humanFinding
 	if proof := analysis.ActiveVerification; proof != nil && proof.Verified && proof.ControlProven &&
 		!strings.EqualFold(proof.Vector, "CNAME") && !strings.EqualFold(proof.Vector, "NS") {
-		findings = append(findings, humanFinding{rank: 110, body: activeVectorFinding(analysis, proof, confidence, options)})
+		findings = append(findings, humanFinding{
+			rank: 110, body: activeVectorFinding(analysis, proof, confidence, options),
+			summary: fmt.Sprintf("%s — %s", valueOr(proof.Vector, "vetor ativo"), valueOr(proof.Resource, analysis.Host)),
+		})
 	}
 	if hasCNAMEFinding(analysis) {
 		rank := 65
@@ -55,7 +59,7 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 		case analysis.Classification == classification.LevelOrphaned:
 			rank = 80
 		}
-		findings = append(findings, humanFinding{rank: rank, body: cnameFinding(analysis, confidence, options)})
+		findings = append(findings, humanFinding{rank: rank, body: cnameFinding(analysis, confidence, options), summary: cnameSummary(analysis)})
 	}
 	if !options.SuppressDelegation && analysis.Delegation != nil &&
 		hasAny(analysis, "DELEGATION_BROKEN", "DELEGATION_TAKEOVER_CANDIDATE",
@@ -67,22 +71,23 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 		} else if hasAny(analysis, "DELEGATION_TAKEOVER_CANDIDATE", "DELEGATION_CLAIMABILITY_VERIFIED") {
 			rank = 90
 		}
-		findings = append(findings, humanFinding{rank: rank, body: delegationFinding(analysis, confidence, options)})
+		findings = append(findings, humanFinding{rank: rank, body: delegationFinding(analysis, confidence, options), summary: "NS — " + analysis.Delegation.Zone})
 	}
 	for _, candidate := range brokenMXs(analysis) {
-		findings = append(findings, humanFinding{rank: 45, body: mxFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 45, body: mxFinding(analysis, candidate, confidence, options), summary: mxSummary(candidate)})
 	}
 	for _, candidate := range brokenSRVs(analysis) {
-		findings = append(findings, humanFinding{rank: 40, body: srvFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 40, body: srvFinding(analysis, candidate, confidence, options), summary: srvSummary(candidate)})
 	}
 	for _, candidate := range analysis.SPFCandidates {
-		findings = append(findings, humanFinding{rank: 45, body: spfFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 45, body: spfFinding(analysis, candidate, confidence, options), summary: spfSummary(candidate)})
 	}
 	if candidate, ok := staleIP(analysis); ok {
-		findings = append(findings, humanFinding{rank: 50, body: ipFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 50, body: ipFinding(analysis, candidate, confidence, options), summary: fmt.Sprintf("%s/ASN — %s", candidate.RecordType, candidate.IP)})
 	}
 	if hasAny(analysis, "DNS_AXFR_ALLOWED") {
-		findings = append(findings, humanFinding{rank: 70, body: axfrFinding(analysis, confidence, options)})
+		evidence := firstEvidence(analysis, "DNS_AXFR_ALLOWED")
+		findings = append(findings, humanFinding{rank: 70, body: axfrFinding(analysis, confidence, options), summary: "AXFR — " + valueOr(evidence.Metadata["zone"], analysis.Host)})
 	}
 	if len(findings) == 0 {
 		if options.SuppressDelegation && analysis.Delegation != nil &&
@@ -95,11 +100,41 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 	}
 
 	sort.SliceStable(findings, func(left, right int) bool { return findings[left].rank > findings[right].rank })
-	blocks := make([]string, 0, len(findings))
-	for _, item := range findings {
-		blocks = append(blocks, strings.TrimSpace(item.body))
+	return consolidateFindings(findings, options)
+}
+
+func consolidateFindings(findings []humanFinding, options Options) string {
+	var builder strings.Builder
+	builder.WriteString(strings.TrimSpace(findings[0].body))
+	builder.WriteByte('\n')
+	for _, item := range findings[1:] {
+		builder.WriteString("  ")
+		builder.WriteString(color.Field("Achado relacionado", options.Color))
+		builder.WriteString(": ")
+		builder.WriteString(item.summary)
+		builder.WriteByte('\n')
 	}
-	return strings.Join(blocks, "\n\n") + "\n"
+	return builder.String()
+}
+
+func cnameSummary(analysis *core.HostAnalysis) string {
+	target := analysis.Host
+	if len(analysis.DNS.CNAME) > 0 {
+		target = analysis.DNS.CNAME[len(analysis.DNS.CNAME)-1]
+	}
+	return "CNAME — " + target
+}
+
+func mxSummary(candidate core.MXCandidate) string {
+	return fmt.Sprintf("MX — %s (%s)", candidate.Target, presentation.Value(string(candidate.DNSStatus)))
+}
+
+func srvSummary(candidate core.SRVCandidate) string {
+	return fmt.Sprintf("SRV — %s → %s:%d (%s)", candidate.Record.Owner, candidate.Record.Target, candidate.Record.Port, presentation.Value(string(candidate.DNSStatus)))
+}
+
+func spfSummary(candidate core.SPFCandidate) string {
+	return fmt.Sprintf("SPF %s — %s (%s)", candidate.Mechanism, candidate.Domain, presentation.Value(string(candidate.DNSStatus)))
 }
 
 func fallbackFinding(analysis *core.HostAnalysis, confidence string, options Options) string {

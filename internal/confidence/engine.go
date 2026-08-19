@@ -135,6 +135,9 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 		"HTTP_MUTATOR":     10,
 		"HTTP_FRAMING_LAB": 10,
 		"PROVIDER_HISTORY": 5,
+		"SNI":              5,
+		"TLS_SAN_PIVOT":    5,
+		"ORIGIN_EXPOSURE":  5,
 	}
 	expected := map[string]bool{
 		"DNS": true, "HTTP": true, "TLS": true, "MX": true,
@@ -142,6 +145,9 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 	}
 	if profile != nil {
 		expected["PROVIDER_HISTORY"] = profile.Version >= 2
+		expected["SNI"] = profile.CheckSNI
+		expected["TLS_SAN_PIVOT"] = profile.PivotSAN
+		expected["ORIGIN_EXPOSURE"] = profile.CheckOrigin
 		expected["NS_DELEGATION"] = profile.CheckNS
 		expected["EMAIL"] = profile.CheckEmail
 		expected["SEC_HEADERS"] = profile.CheckHeaders

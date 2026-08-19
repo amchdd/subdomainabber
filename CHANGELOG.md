@@ -13,6 +13,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - raciocínio de fallback MX, seguimento de CNAME em destinos SRV e correlação entre CAA e emissor TLS;
 - classificação de falhas DNSSEC e comparação histórica de certificados e provedores entre varreduras;
 - descoberta de tokens TXT residuais sem promover observação isolada a prova de controle;
+- comparação TLS com SNI ausente e alternativo, descoberta controlada de SANs e histórico de drift do certificado;
+- correlação de possíveis origens atrás de CDN/WAF com confirmação direta limitada aos endereços informados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
@@ -46,6 +48,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Corrigido
 
+- a saída humana mantém múltiplos achados do mesmo subdomínio e ordena a evidência de maior impacto sem descartar os demais vetores;
 - configurações numéricas inválidas são rejeitadas antes da criação de limitadores, canais e rotinas concorrentes; o modo daemon exige intervalo mínimo de um minuto e a enumeração impõe limites seguros de concorrência;
 - alertas NS e tentativas agressivas são deduplicados pelo corte de zona, evitando mensagens repetidas por hosts descendentes;
 - descobertas `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` nunca são enviadas ao Discord;

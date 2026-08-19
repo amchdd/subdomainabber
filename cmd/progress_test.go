@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,14 @@ func TestProgressSnapshotTracksCancellationAndNotStarted(t *testing.T) {
 	snapshot := progress.Snapshot()
 	if snapshot.Completed != 1 || snapshot.Canceled != 1 || snapshot.NotStarted != 3 || snapshot.Processed != 1 {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
+	}
+}
+
+func TestProgressAcceptsDiscoveredHosts(t *testing.T) {
+	progress := newScanProgress(1, 1, 1, nil, io.Discard, false)
+	progress.AddTotal(2)
+	if got := progress.Snapshot().Total; got != 3 {
+		t.Fatalf("total dinâmico = %d", got)
 	}
 }
 

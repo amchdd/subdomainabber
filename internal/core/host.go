@@ -67,6 +67,9 @@ type HostAnalysis struct {
 	CDN                string                     `json:"cdn,omitempty"`
 	Headers            map[string][]string        `json:"headers,omitempty"` // Apenas se --headers ativo
 	HTTPObservations   map[string]HTTPObservation `json:"http_observations,omitempty"`
+	TLS                *TLSObservation            `json:"tls,omitempty"`
+	SNIVariants        []TLSObservation           `json:"sni_variants,omitempty"`
+	SANCandidates      []string                   `json:"san_candidates,omitempty"`
 	ProviderCandidates []ProviderCandidate        `json:"provider_candidates,omitempty"`
 	MutationResults    []MutationResult           `json:"mutation_results,omitempty"`
 	Delegation         *DelegationCandidate       `json:"delegation_candidate,omitempty"`
@@ -111,6 +114,11 @@ type ScanProfile struct {
 	CheckHeaders         bool     `json:"check_headers,omitempty"`
 	CheckShadowIT        bool     `json:"check_shadow_it,omitempty"`
 	CheckRedirects       bool     `json:"check_redirects,omitempty"`
+	CheckSNI             bool     `json:"check_sni,omitempty"`
+	PivotSAN             bool     `json:"pivot_san,omitempty"`
+	SANRoots             []string `json:"san_roots,omitempty"`
+	CheckOrigin          bool     `json:"check_origin,omitempty"`
+	OriginTargets        []string `json:"origin_targets,omitempty"`
 	CheckEvasion         bool     `json:"check_evasion,omitempty"`
 	CheckFraming         bool     `json:"check_framing,omitempty"`
 	Aggressive           bool     `json:"aggressive,omitempty"`
@@ -174,6 +182,35 @@ func (h *HostAnalysis) HTTPObservation(scheme string) (HTTPObservation, bool) {
 	defer h.mu.Unlock()
 	observation, ok := h.HTTPObservations[scheme]
 	return cloneHTTPObservation(observation), ok
+}
+
+func (h *HostAnalysis) SetTLS(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	copy := observation
+	copy.SANs = append([]string(nil), observation.SANs...)
+	h.TLS = &copy
+}
+
+func (h *HostAnalysis) AddSNIVariant(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	observation.SANs = append([]string(nil), observation.SANs...)
+	h.SNIVariants = append(h.SNIVariants, observation)
+}
+
+func (h *HostAnalysis) AddSANCandidate(host string) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, existing := range h.SANCandidates {
+		if existing == host {
+			return
+		}
+	}
+	h.SANCandidates = append(h.SANCandidates, host)
 }
 
 func (h *HostAnalysis) AddProviderCandidate(candidate ProviderCandidate) {

@@ -54,7 +54,7 @@ func TestHumanMXDoesNotClaimTakeover(t *testing.T) {
 	}
 }
 
-func TestHumanListsAllFindingsAndKeepsCNAMETakeoverFirst(t *testing.T) {
+func TestHumanConsolidatesFindingsAndKeepsCNAMETakeoverFirst(t *testing.T) {
 	analysis := &core.HostAnalysis{
 		Host: "assets.example.com", Classification: classification.LevelLikelyTakeoverable,
 		DNS: core.DNSRecordSet{
@@ -73,10 +73,11 @@ func TestHumanListsAllFindingsAndKeepsCNAMETakeoverFirst(t *testing.T) {
 		},
 	}
 	output := Human(analysis, "HIGH")
-	cnameIndex := strings.Index(output, "[TAKEOVER PROVÁVEL]")
-	mxIndex := strings.Index(output, "[MX QUEBRADO]")
-	if cnameIndex < 0 || mxIndex < 0 || cnameIndex > mxIndex {
-		t.Fatalf("esperava takeover CNAME primeiro e MX preservado:\n%s", output)
+	if strings.Count(output, "[") != 1 || !strings.HasPrefix(output, "[TAKEOVER PROVÁVEL]") {
+		t.Fatalf("esperava um único bloco com takeover CNAME como achado principal:\n%s", output)
+	}
+	if !strings.Contains(output, "Achado relacionado: MX — mail.expired.test (NXDOMAIN)") {
+		t.Fatalf("achado MX não foi consolidado no bloco principal:\n%s", output)
 	}
 	if !strings.Contains(output, "Fonte: linha de base") {
 		t.Fatalf("fonte da linha de base não foi traduzida:\n%s", output)
