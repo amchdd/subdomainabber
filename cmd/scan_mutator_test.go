@@ -15,6 +15,9 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	previousVHost := checkVHost
 	previousWebDeps := checkWebDeps
 	previousFollow := followRedirects
+	previousSNI := checkSNI
+	previousOrigin := checkOrigin
+	previousSANPivot := pivotSAN
 	t.Cleanup(func() {
 		checkEvasion = previousEvasion
 		checkFraming = previousFraming
@@ -22,10 +25,14 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 		checkVHost = previousVHost
 		checkWebDeps = previousWebDeps
 		followRedirects = previousFollow
+		checkSNI = previousSNI
+		checkOrigin = previousOrigin
+		pivotSAN = previousSANPivot
 	})
 	checkEvasion = false
 	checkFraming = false
 	aggressive = false
+	pivotSAN = false
 
 	enableCheckAllModules()
 	if checkEvasion {
@@ -39,6 +46,12 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 	if !checkVHost || !checkWebDeps || !followRedirects {
 		t.Fatal("--check-all não habilitou as análises HTTP seguras")
+	}
+	if pivotSAN {
+		t.Fatal("--check-all habilitou pivô SAN sem allowlist")
+	}
+	if !checkSNI || !checkOrigin {
+		t.Fatal("--check-all não habilitou as análises TLS seguras")
 	}
 }
 

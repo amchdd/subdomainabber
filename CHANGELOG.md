@@ -12,6 +12,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - análise de cadeias HTTP com evidência por hop, limite configurável e detecção de destino sem resolução ou recurso removido;
 - comparação de vhost para identificar wildcard HTTP e backend padrão;
 - correlação de CSP e subrecursos HTML com CNAME, estado DNS, provedor e resposta de assets relacionados;
+- comparação TLS com SNI ausente e alternativo, descoberta controlada de SANs e histórico de drift do certificado;
+- correlação de possíveis origens atrás de CDN/WAF com confirmação direta limitada aos endereços informados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
@@ -45,6 +47,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Corrigido
 
+- a saída humana mantém múltiplos achados do mesmo subdomínio e ordena a evidência de maior impacto sem descartar os demais vetores;
 - configurações numéricas inválidas são rejeitadas antes da criação de limitadores, canais e rotinas concorrentes; o modo daemon exige intervalo mínimo de um minuto e a enumeração impõe limites seguros de concorrência;
 - alertas NS e tentativas agressivas são deduplicados pelo corte de zona, evitando mensagens repetidas por hosts descendentes;
 - descobertas `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` nunca são enviadas ao Discord;

@@ -92,10 +92,11 @@ func (e *Engine) Verify(ctx context.Context, historical *core.HostAnalysis) (*Re
 	}
 
 	analysis := &core.HostAnalysis{
-		Host:           historical.Host,
-		DNS:            dnsRecords,
-		Classification: classification.LevelUnknown,
-		ScanProfile:    cloneProfile(historical.ScanProfile),
+		Host:              historical.Host,
+		DNS:               dnsRecords,
+		Classification:    classification.LevelUnknown,
+		ScanProfile:       cloneProfile(historical.ScanProfile),
+		PreviousEvidences: append([]core.Evidence(nil), historical.Evidences...),
 	}
 
 	if err := e.registry.Run(ctx, analysis); err != nil {
@@ -195,6 +196,8 @@ func cloneProfile(profile *core.ScanProfile) *core.ScanProfile {
 	clone := *profile
 	clone.SRVOwners = append([]string(nil), profile.SRVOwners...)
 	clone.RelatedHosts = append([]string(nil), profile.RelatedHosts...)
+	clone.SANRoots = append([]string(nil), profile.SANRoots...)
+	clone.OriginTargets = append([]string(nil), profile.OriginTargets...)
 	return &clone
 }
 

@@ -21,9 +21,11 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 - separa takeover, exposição, configuração quebrada e candidatos que ainda exigem prova de reivindicabilidade;
 - armazena resultados e instantâneos em SQLite para revalidação posterior;
 - oferece saída em texto, JSON Lines e modos de explicação;
+- preserva evidências independentes de CNAME, NS, MX, SRV, SPF, IP e AXFR no mesmo host, sem ocultar achados secundários;
 - roteia verificadores ativos somente para provedores e CNAMEs compatíveis;
 - permite módulos ativos opcionais para exposição em nuvem, AXFR, redirecionamentos e outras verificações;
 - registra cadeias de redirecionamento, compara vhosts e correlaciona CSP e subrecursos HTML com seus destinos DNS;
+- compara certificados com SNI ausente ou alternativo, registra SANs relacionados, detecta drift e correlaciona possíveis origens atrás de CDN/WAF;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
 - oferece reivindicações reais e auditáveis para o Amazon S3 e o Amazon Route 53 no modo agressivo, com prova de controle e tentativa imediata de liberação.
 
@@ -38,6 +40,7 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 | TXT/SPF | observa tokens TXT sem declarar obsolescência; SPF mantém a cadeia e usa o RCODE DNS real |
 | A/AAAA | correlaciona ASN e provedor de nuvem e produz somente um candidato para revisão quando há sinais adicionais; portas fechadas não provam IP desalocado |
 | HTTP | preserva cada hop da cadeia, identifica destinos sem resolução, compara backend padrão e correlaciona dependências CSP/HTML |
+| TLS | registra fingerprint, serial, emissor e SANs; compara SNI e histórico sem transformar divergência isolada em takeover |
 | AXFR | tratado como exposição de informação, nunca como controle da zona |
 
 Delegações seguem estados próprios: `DELEGATION_BROKEN`, `DELEGATION_TAKEOVER_CANDIDATE`, `DELEGATION_CLAIMABILITY_VERIFIED` e `ZONE_CONTROL_CONFIRMED`. A implementação passiva produz apenas os dois primeiros; o adaptador do Amazon Route 53 pode produzir o último por criação temporária e correspondência exata do conjunto de NS.
@@ -159,6 +162,9 @@ As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização con
 | `--follow-redirects [--redirect-depth N]` | Registra cada hop da cadeia e classifica destinos sem DNS ou recursos removidos. O limite aceito é de 1 a 20. |
 | `--check-vhost` | Compara a linha de base com valores benignos de `Host` para identificar wildcard HTTP e backend padrão. |
 | `--check-web-deps --related-hosts ...` | Extrai referências de CSP e HTML, segue CNAME e verifica o estado DNS dos hosts relacionados. |
+| `--check-sni` | Compara o certificado observado com SNI ausente e com um nome alternativo no mesmo endpoint. |
+| `--pivot-san --san-roots ...` | Registra SANs não curinga das raízes indicadas como novos candidatos da varredura. |
+| `--check-origin [--origin-allowlist ...]` | Correlaciona sinais DNS, TLS e HTTP; a lista opcional habilita confirmação direta nos endereços informados. |
 | `--evasion` | Executa cinco sondas HTTP brutas de requisição única somente quando a linha de base aparenta bloqueio. Não executa CL.TE/TE.CL. |
 | `--whois-pivot --whois-pivot-confirm --whois-pivot-allowlist ...` | Descobre domínios relacionados por WHOIS e só inclui na varredura os domínios registráveis presentes na lista permitida. A confirmação não substitui a leitura do escopo do programa. |
 | `--check-framing` | Laboratório CL.TE/TE.CL de risco elevado. Exige também confirmação e lista de permissões controlada. |

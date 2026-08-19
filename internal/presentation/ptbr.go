@@ -176,7 +176,7 @@ func EvidenceDescription(evidence core.Evidence) string {
 	case "DANGLING_REDIRECT":
 		return "a cadeia termina em um hostname inexistente ou recurso removido"
 	case "HTTP_HTTPS_REDIRECT_MISSING":
-		return "o endpoint HTTP não faz upgrade direto para HTTPS no mesmo hostname"
+		return "o endpoint HTTP não conclui o redirecionamento em HTTPS"
 	case "HTTP_HTTPS_PORT_INCONSISTENT":
 		return "o upgrade redireciona para uma porta HTTPS não convencional"
 	case "HTTPS_DOWNGRADE_REDIRECT":
@@ -187,6 +187,14 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "a página referencia um recurso em host órfão vinculado a provedor conhecido"
 	case "DEAD_ASSET_HTTP":
 		return "a página referencia um asset que responde como removido"
+	case "ORIGIN_DIRECT_MATCH":
+		return "um destino permitido reproduziu a aplicação com o Host e o SNI originais"
+	case "ORIGIN_EXPOSURE_CANDIDATE":
+		return "um cabeçalho revelou um candidato a origin; a alcançabilidade direta não foi confirmada"
+	case "TLS_CERTIFICATE_DRIFT":
+		return "issuer, SAN ou provider mudou desde a coleta anterior"
+	case "SNI_CERT_MISMATCH":
+		return "o mesmo IP apresentou outro certificado com SNI ausente ou alternativo"
 	default:
 		return evidence.Description
 	}
