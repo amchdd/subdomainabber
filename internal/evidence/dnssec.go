@@ -3,6 +3,7 @@ package evidence
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
@@ -16,6 +17,10 @@ type DNSSECCollector struct {
 type dnssecResolver interface {
 	CheckDNSSEC(context.Context, string) (map[string]bool, error)
 	FindAuthoritativeZone(context.Context, string) (dns.AuthoritativeZone, error)
+}
+
+type dnssecDiagnoser interface {
+	DiagnoseDNSSEC(context.Context, string) (core.DNSSECDiagnosis, error)
 }
 
 func NewDNSSECCollector(resolver dnssecResolver) *DNSSECCollector {
@@ -61,6 +66,36 @@ func (c *DNSSECCollector) Collect(ctx context.Context, analysis *core.HostAnalys
 				Confidence:  100,
 				Metadata:    metadata,
 			})
+		}
+	}
+	if resolver, ok := c.resolver.(dnssecDiagnoser); ok {
+		diagnosis, diagnoseErr := resolver.DiagnoseDNSSEC(ctx, analysis.Host)
+		if diagnoseErr == nil {
+			metadata := map[string]string{
+				"zone": zone, "state": diagnosis.State,
+				"normal_status": string(diagnosis.NormalStatus), "cd_status": string(diagnosis.CDStatus),
+				"authenticated": strconv.FormatBool(diagnosis.Authenticated),
+			}
+			switch diagnosis.State {
+			case "BOGUS":
+				analysis.AddEvidence(core.Evidence{
+					Type: "DNSSEC_BOGUS", Source: "DNSSEC",
+					Description: "A resolução retorna SERVFAIL com validação ativa, mas responde quando o bit CD desabilita a checagem.",
+					Weight:      20, Confidence: 95, Metadata: metadata,
+				})
+			case "SERVFAIL":
+				analysis.AddEvidence(core.Evidence{
+					Type: "DNSSEC_SERVFAIL_INCONCLUSIVE", Source: "DNSSEC",
+					Description: "SERVFAIL persistiu com a checagem DNSSEC desabilitada; a causa permanece inconclusiva.",
+					Weight:      0, Confidence: 80, Metadata: metadata,
+				})
+			case "VALIDATED":
+				analysis.AddEvidence(core.Evidence{
+					Type: "DNSSEC_VALIDATED", Source: "DNSSEC",
+					Description: "O resolvedor marcou a resposta com o bit AD.",
+					Weight:      0, Confidence: 90, IsNegative: true, Metadata: metadata,
+				})
+			}
 		}
 	}
 	return nil

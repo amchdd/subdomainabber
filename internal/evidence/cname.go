@@ -3,6 +3,7 @@ package evidence
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/internal/dns"
@@ -10,8 +11,6 @@ import (
 	"github.com/amchdd/subdomainabber/pkg/signatures"
 )
 
-// CNAMECollector cruza a cadeia de CNAMEs com o catálogo de assinaturas e
-// acrescenta evidências de compatibilidade com o serviço.
 type CNAMECollector struct {
 	resolver *dns.Resolver
 	sigs     []signatures.Fingerprint
@@ -35,7 +34,6 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 		return nil
 	}
 
-	// Avalia a cadeia inteira em busca de uma correspondência com o provedor.
 	var danglingNode string
 	var matchedProvider string
 
@@ -53,7 +51,7 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 			if _, matched := matchingCNAME([]string{cnameClean}, sig.CNames); matched {
 				confidence := sig.Confidence
 				if confidence == 0 {
-					confidence = 80 // Base para correspondência de provedor em CNAME
+					confidence = 80
 				}
 
 				analysis.AddEvidence(core.Evidence{
@@ -85,7 +83,6 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 				})
 				matchedProvider = sig.Service
 
-				// Registra a expectativa de NXDOMAIN declarada para o serviço.
 				if sig.NXDomain {
 					analysis.AddEvidence(core.Evidence{
 						Type:        "NXDOMAIN_EXPECTED",
@@ -99,17 +96,34 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 			}
 		}
 
-		// O último nó da cadeia é o candidato a referência pendente.
 		if i == len(analysis.DNS.CNAME)-1 {
 			danglingNode = cnameClean
 		}
 	}
 
-	// Verifica se o destino final da cadeia possui endereços IP.
-	if danglingNode != "" && len(analysis.DNS.A) == 0 && len(analysis.DNS.AAAA) == 0 {
-		// Consulta o último nó para preservar o estado DNS exato.
-		status := c.resolver.ResolveAddressStatus(ctx, danglingNode)
+	if danglingNode == "" {
+		return nil
+	}
+	status := core.DNSStatusResolved
+	consensusState := "DISABLED"
+	missingAddress := len(analysis.DNS.A) == 0 && len(analysis.DNS.AAAA) == 0
+	if missingAddress {
+		status = core.DNSStatusError
+		if c.resolver != nil {
+			status, consensusState = c.resolver.AddressConsensus(ctx, danglingNode)
+		}
+	}
+	analysis.AddEvidence(core.Evidence{
+		Type: "CNAME_CHAIN_TRACE", Source: "DNS",
+		Description: "A cadeia CNAME foi percorrida até o destino terminal.",
+		Weight:      0, Confidence: 100,
+		Metadata: map[string]string{
+			"chain": strings.Join(analysis.DNS.CNAME, " -> "), "terminal": danglingNode,
+			"chain_length": fmt.Sprintf("%d", len(analysis.DNS.CNAME)), "terminal_status": string(status), "consensus": consensusState,
+		},
+	})
 
+	if missingAddress {
 		evType, desc, weight, evidenceConfidence := cnameResolutionEvidence(status, matchedProvider)
 
 		analysis.AddEvidence(core.Evidence{
@@ -124,6 +138,13 @@ func (c *CNAMECollector) Collect(ctx context.Context, analysis *core.HostAnalysi
 				"dns_status":   string(status),
 			},
 		})
+		if consensusState != "DISABLED" {
+			analysis.AddEvidence(core.Evidence{
+				Type: "DNS_CONSENSUS_STATE", Source: "DNS",
+				Description: "O estado terminal foi comparado entre resolvedores independentes.",
+				Confidence:  100, Metadata: map[string]string{"state": consensusState, "target": danglingNode},
+			})
+		}
 	}
 
 	return nil

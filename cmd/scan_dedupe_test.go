@@ -57,4 +57,7 @@ func TestCLISeverityFilterUsesDiscordSeverityMapping(t *testing.T) {
 	if !cliSeverityAllows(classification.LevelMisconfigured, "") {
 		t.Fatal("empty CLI filter changed default visibility")
 	}
+	if isActionableClassification(classification.LevelHealthy) {
+		t.Fatal("estado saudável foi tratado como achado acionável")
+	}
 }

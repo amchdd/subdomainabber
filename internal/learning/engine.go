@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
+	"github.com/amchdd/subdomainabber/internal/dns"
 )
 
 // Candidate representa um padrão recorrente que pode originar uma nova assinatura.
@@ -16,6 +17,9 @@ type Candidate struct {
 	TargetCNAME   string
 	PageTitle     string
 	StatusCode    string
+	BodyHash      string
+	Server        string
+	TLSIssuer     string
 	ObservedHosts int
 }
 
@@ -75,17 +79,13 @@ func (e *Engine) Discover(ctx context.Context, minOccurrences int) ([]Candidate,
 			continue
 		}
 
-		// Reduz o destino à base usada no agrupamento do provedor.
-		parts := strings.Split(targetCNAME, ".")
-		var providerBase string
-		if len(parts) > 2 {
-			providerBase = strings.Join(parts[len(parts)-2:], ".")
-		} else {
+		providerBase := dns.ExtractRootDomain(targetCNAME)
+		if providerBase == "" {
 			providerBase = targetCNAME
 		}
 
 		// Obtém o título e o status da resposta HTTP observada.
-		var title, status string
+		var title, status, bodyHash, server, tlsIssuer string
 		for _, ev := range evidences {
 			if ev.Type == "HTTP_RESPONSE" {
 				if t, ok := ev.Metadata["title"]; ok && t != "" {
@@ -94,15 +94,19 @@ func (e *Engine) Discover(ctx context.Context, minOccurrences int) ([]Candidate,
 				if s, ok := ev.Metadata["status"]; ok {
 					status = s
 				}
-				break
+				bodyHash = ev.Metadata["body_hash"]
+				server = strings.ToLower(strings.TrimSpace(ev.Metadata["server"]))
+			}
+			if ev.Type == "TLS_CERTIFICATE_OBSERVED" {
+				tlsIssuer = strings.ToLower(strings.TrimSpace(ev.Metadata["tls_issuer"]))
 			}
 		}
 
-		if title == "" {
+		if title == "" && bodyHash == "" {
 			continue
 		}
 
-		key := fmt.Sprintf("%s|%s|%s", providerBase, title, status)
+		key := fmt.Sprintf("%s|%s|%s|%s|%s|%s", providerBase, title, status, bodyHash, server, tlsIssuer)
 		if cand, exists := grouping[key]; exists {
 			cand.ObservedHosts++
 		} else {
@@ -110,6 +114,9 @@ func (e *Engine) Discover(ctx context.Context, minOccurrences int) ([]Candidate,
 				TargetCNAME:   providerBase,
 				PageTitle:     title,
 				StatusCode:    status,
+				BodyHash:      bodyHash,
+				Server:        server,
+				TLSIssuer:     tlsIssuer,
 				ObservedHosts: 1,
 			}
 		}

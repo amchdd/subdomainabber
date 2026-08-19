@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,12 +36,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const maxSANPivotHosts = 256
+
 var (
 	scanQuiet            bool
 	scanExplain          bool
 	scanExplainJ         bool
 	scanShowInconclusive bool
 	scanMinSeverity      string
+	scanFailOn           string
 	scanConcurrency      int
 	timeout              int
 	jsonOutput           bool
@@ -54,8 +59,12 @@ var (
 	daemon               string
 	scanInputList        string
 	discordWebhook       string
+	genericWebhook       string
+	resumeRun            string
+	dnsConsensus         bool
+	scanStream           bool
+	scanBatchSize        int
 
-	// Novas flags de análise
 	checkCloud          bool
 	checkAXFR           bool
 	checkDNSSEC         bool
@@ -63,6 +72,19 @@ var (
 	checkHeaders        bool
 	checkShadowIT       bool
 	checkRedirects      bool
+	checkVHost          bool
+	checkWebDeps        bool
+	followRedirects     bool
+	followRedirectsSet  bool
+	redirectDepth       int
+	relatedHosts        string
+	checkSNI            bool
+	pivotSAN            bool
+	sanRootsRaw         string
+	sanRoots            []string
+	checkOrigin         bool
+	originRaw           string
+	originTargets       []string
 	checkAll            bool
 	checkEvasion        bool
 	checkSRV            bool
@@ -86,6 +108,26 @@ var scanCmd = &cobra.Command{
 	Short: "Analisa hosts fornecidos por argumento, arquivo ou entrada padrão (stdin)",
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		followRedirectsSet = cmd.Flags().Changed("follow-redirects")
+		if resumeRun != "" {
+			if scanStream || aggressive || daemon != "" {
+				return fmt.Errorf("--resume não pode ser combinado com --stream, --aggressive ou --daemon")
+			}
+			if len(args) > 0 || scanInputList != "" {
+				return fmt.Errorf("--resume usa os alvos pendentes do banco e não aceita uma nova lista")
+			}
+			return runScan(commandContext(cmd), nil, nil)
+		}
+		if scanStream {
+			if aggressive || daemon != "" {
+				return fmt.Errorf("--stream não pode ser combinado com --aggressive ou --daemon")
+			}
+			session := &scanSession{}
+			err := streamScanDomains(args, scanInputList, cmd.InOrStdin(), stdinHasPipedData(os.Stdin), scanBatchSize, func(batch []string) error {
+				return runScan(commandContext(cmd), batch, nil, session)
+			})
+			return finishScanSession(commandContext(cmd), session, err)
+		}
 		domains, err := loadScanDomains(args, scanInputList, cmd.InOrStdin(), stdinHasPipedData(os.Stdin))
 		if err != nil {
 			return err
@@ -98,6 +140,38 @@ var scanCmd = &cobra.Command{
 	},
 }
 
+type scanSession struct {
+	RunID  string
+	DBPath string
+}
+
+func finishScanSession(ctx context.Context, session *scanSession, scanErr error) error {
+	if session == nil || session.RunID == "" || session.DBPath == "" {
+		return scanErr
+	}
+	store, err := storage.New(session.DBPath)
+	if err != nil {
+		if scanErr != nil {
+			return errors.Join(scanErr, err)
+		}
+		return err
+	}
+	defer store.Close()
+	status := "COMPLETED"
+	if ctx != nil && ctx.Err() != nil {
+		status = "INTERRUPTED"
+	} else if scanErr != nil {
+		status = "FAILED"
+	}
+	if err := store.FinishRun(session.RunID, status); err != nil {
+		if scanErr != nil {
+			return errors.Join(scanErr, err)
+		}
+		return err
+	}
+	return scanErr
+}
+
 func init() {
 	rootCmd.AddCommand(scanCmd)
 
@@ -106,6 +180,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanExplainJ, "explain-json", false, "Exibe a explicação matemática e sintética estruturada em JSON")
 	scanCmd.Flags().BoolVar(&scanShowInconclusive, "show-inconclusive", false, "Exibe blocos humanos para UNKNOWN e INSUFFICIENT_EVIDENCE")
 	scanCmd.Flags().StringVar(&scanMinSeverity, "min-severity", "", "Severidade mínima do CLI: info, low, medium, high ou critical (vazio = todos os achados)")
+	scanCmd.Flags().StringVar(&scanFailOn, "fail-on-severity", "", "Encerra com código diferente de zero ao encontrar a severidade informada")
 	scanCmd.Flags().IntVarP(&scanConcurrency, "concurrency", "c", 0, "Número de hosts processados simultaneamente (0 = usa configuração ou padrão de 50)")
 	scanCmd.Flags().IntVarP(&timeout, "timeout", "t", 0, "Tempo limite de rede por operação, em segundos, iniciado após a permissão do limitador")
 	scanCmd.Flags().BoolVar(&jsonOutput, "json", false, "Saída dos resultados como JSON Lines (ndjson)")
@@ -120,11 +195,16 @@ func init() {
 	scanCmd.Flags().StringVar(&daemon, "daemon", "", "Habilitar modo contínuo com intervalo (ex.: 1h, 30m)")
 	scanCmd.Flags().StringVarP(&scanInputList, "list", "l", "", "Arquivo com um host por linha")
 	scanCmd.Flags().StringVar(&discordWebhook, "discord-webhook", "", "Webhook do Discord para achados relevantes (prefira SABBER_DISCORD_WEBHOOK para não expor o segredo no histórico)")
+	scanCmd.Flags().StringVar(&genericWebhook, "webhook", "", "Webhook HTTPS genérico assinado com SABBER_WEBHOOK_SECRET")
+	scanCmd.Flags().StringVar(&resumeRun, "resume", "", "Retoma os alvos pendentes de uma execução registrada")
+	scanCmd.Flags().BoolVar(&dnsConsensus, "dns-consensus", false, "Compara respostas entre resolvedores antes de concluir estados DNS")
+	scanCmd.Flags().BoolVar(&scanStream, "stream", false, "Processa entradas extensas em lotes com memória limitada")
+	scanCmd.Flags().IntVar(&scanBatchSize, "batch-size", 1000, "Quantidade de hosts por lote no modo --stream")
 
-	scanCmd.Flags().BoolVar(&checkAll, "check-all", false, "Habilita NS, SRV, AXFR, nuvem, e-mail, cabeçalhos, DNSSEC, Shadow IT e redirecionamentos; não habilita evasão, framing nem modo agressivo")
+	scanCmd.Flags().BoolVar(&checkAll, "check-all", false, "Habilita todos os módulos seguros; não habilita evasão, framing nem modo agressivo")
 	scanCmd.Flags().BoolVar(&checkCloud, "check-cloud", false, "Habilitar verificação de exposição em nuvem (S3, Blob e GCS)")
 	scanCmd.Flags().BoolVar(&checkAXFR, "check-axfr", false, "Tentar transferência de zona (AXFR)")
-	scanCmd.Flags().BoolVar(&checkDNSSEC, "check-dnssec", false, "Inspecionar artefatos DNSSEC sem afirmar validação da cadeia")
+	scanCmd.Flags().BoolVar(&checkDNSSEC, "check-dnssec", false, "Classificar artefatos e falhas DNSSEC sem substituir validação autoritativa")
 	scanCmd.Flags().BoolVar(&checkEmail, "check-email", false, "Analisar segurança de e-mail (SPF/DMARC)")
 	scanCmd.Flags().BoolVar(&checkSRV, "check-srv", false, "Enumerar uma lista controlada de nomes proprietários SRV comuns além do hostname de entrada")
 	scanCmd.Flags().StringVar(&srvOwners, "srv-owners", "", "Nomes proprietários SRV adicionais separados por vírgula (ex.: _sip._tcp,_ldap._tcp)")
@@ -132,6 +212,16 @@ func init() {
 	scanCmd.Flags().BoolVar(&checkHeaders, "check-headers", false, "Analisar cabeçalhos de segurança HTTP (HSTS/CSP)")
 	scanCmd.Flags().BoolVar(&checkShadowIT, "check-shadowit", false, "Detectar serviços SaaS não monitorados (Shadow IT)")
 	scanCmd.Flags().BoolVar(&checkRedirects, "check-redirects", false, "Realizar testes ativos de redirecionamento aberto (Open Redirect)")
+	scanCmd.Flags().BoolVar(&followRedirects, "follow-redirects", true, "Registrar a cadeia de redirecionamentos HTTP")
+	scanCmd.Flags().IntVar(&redirectDepth, "redirect-depth", 0, "Limite de hops da cadeia de redirecionamentos (1 a 20)")
+	scanCmd.Flags().BoolVar(&checkVHost, "check-vhost", true, "Comparar respostas com variações benignas de Host")
+	scanCmd.Flags().BoolVar(&checkWebDeps, "check-web-deps", true, "Extrair e correlacionar dependências CSP e HTML")
+	scanCmd.Flags().StringVar(&relatedHosts, "related-hosts", "", "Hosts adicionais para seguir redirects e consultar assets, separados por vírgula ou arquivo")
+	scanCmd.Flags().BoolVar(&checkSNI, "check-sni", false, "Acrescentar SNI alternativo à comparação padrão sem SNI")
+	scanCmd.Flags().BoolVar(&pivotSAN, "pivot-san", false, "Adicionar SANs relacionados como novos candidatos da varredura")
+	scanCmd.Flags().StringVar(&sanRootsRaw, "san-roots", "", "Raízes DNS aceitas por --pivot-san, separadas por vírgula ou arquivo")
+	scanCmd.Flags().BoolVar(&checkOrigin, "check-origin", false, "Correlacionar sinais de origin atrás de CDN ou WAF")
+	scanCmd.Flags().StringVar(&originRaw, "origin-allowlist", "", "IPs ou hosts autorizados para confirmação direta de origin")
 	scanCmd.Flags().BoolVar(&checkEvasion, "evasion", false, "Executar sondas HTTP de evasão controlada com comparação da linha de base; exige autorização do programa")
 	scanCmd.Flags().BoolVar(&checkFraming, "check-framing", false, "Laboratório experimental CL.TE/TE.CL; somente ambiente controlado e autorizado")
 	scanCmd.Flags().BoolVar(&framingControlled, "framing-confirm-controlled", false, "Confirma que todos os alvos de framing pertencem a ambiente controlado com autorização específica")
@@ -145,7 +235,7 @@ func init() {
 	scanCmd.Flags().StringVar(&aggressiveAllowlist, "aggressive-allowlist", "", "Lista exata de hosts autorizados para reivindicação automática (separada por vírgula ou arquivo)")
 }
 
-func runScan(ctx context.Context, domains, claimTargets []string) (runErr error) {
+func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*scanSession) (runErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -205,11 +295,22 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if checkAll {
 		enableCheckAllModules()
 	}
+	if redirectDepth != 0 {
+		cliCfg.RedirectDepth = redirectDepth
+	}
 	if checkSRV {
 		configuredSRVOwners, err = parseSRVOwners(srvOwners)
 		if err != nil {
 			return err
 		}
+	}
+	sanRoots, err = parseSANRoots(pivotSAN, sanRootsRaw)
+	if err != nil {
+		return err
+	}
+	originTargets, err = parseOriginTargets(checkOrigin, originRaw)
+	if err != nil {
+		return err
 	}
 
 	if checkNS {
@@ -224,10 +325,21 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if discordWebhook != "" {
 		cliCfg.DiscordWebhook = discordWebhook
 	}
+	if genericWebhook != "" {
+		cliCfg.WebhookURL = genericWebhook
+	}
 	if scanQuiet {
 		cliCfg.Silent = true
 	}
 	cfg = config.Merge(cfg, cliCfg)
+	if checkAll || followRedirectsSet {
+		cfg.FollowRedirects = followRedirects
+	}
+	related, err := parseRelatedHosts(relatedHosts)
+	if err != nil {
+		return err
+	}
+	webHosts := appendUniqueDomains(domains, related)
 	applyGlobalFlags(cfg)
 	if err := config.ValidateRuntime(cfg); err != nil {
 		return fmt.Errorf("configuração de execução inválida: %w", err)
@@ -238,6 +350,11 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if scanMinSeverity != "" {
 		if _, err := notify.ParseSeverity(scanMinSeverity); err != nil {
 			return fmt.Errorf("--min-severity: %w", err)
+		}
+	}
+	if scanFailOn != "" {
+		if _, err := notify.ParseSeverity(scanFailOn); err != nil {
+			return fmt.Errorf("--fail-on-severity: %w", err)
 		}
 	}
 	if err := validateAggressiveRuntime(aggressive, cfg.Daemon); err != nil {
@@ -310,7 +427,8 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if err != nil {
 		return err
 	}
-	scanProfile := currentScanProfile(cfg, signatureDigest)
+	scanProfile := currentScanProfile(cfg, signatureDigest, webHosts, related)
+	scanProfile.DNSConsensus = dnsConsensus
 
 	logInfo("[*] Assinaturas carregadas: %d\n", len(allSignatures))
 
@@ -322,6 +440,31 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	}
 	defer closeStoreWithError(db, &runErr)
 	logInfo("OK\n")
+	var session *scanSession
+	if len(sessions) > 0 {
+		session = sessions[0]
+		if session != nil {
+			session.DBPath = cfg.DBPath
+		}
+	}
+	if resumeRun != "" {
+		storedProfile, profileErr := db.RunProfile(ctx, resumeRun)
+		if profileErr != nil {
+			return profileErr
+		}
+		if !sameScanProfile(scanProfile, storedProfile) {
+			return fmt.Errorf("o perfil atual difere da execução %s; repita as mesmas opções", resumeRun)
+		}
+		scanProfile = cloneScanProfile(storedProfile)
+		webHosts = append([]string(nil), storedProfile.RelatedHosts...)
+		domains, err = db.PendingTargets(ctx, resumeRun)
+		if err != nil {
+			return err
+		}
+		if len(domains) == 0 {
+			return fmt.Errorf("a execução %s não possui alvos pendentes", resumeRun)
+		}
+	}
 
 	var autoClaimer *claimengine.Engine
 	if aggressive {
@@ -354,10 +497,14 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	}
 
 	res := dns.New(customResolvers)
+	res.SetConsensus(dnsConsensus)
 	res.SetTimeout(time.Duration(cfg.Timeout) * time.Second)
 	res.SetWildcardFiltering(!cfg.NoWildcardFilter)
 	if err := configureResolverDoH(res, cfg); err != nil {
 		return err
+	}
+	if dnsConsensus && !res.ConsensusAvailable() {
+		return fmt.Errorf("--dns-consensus exige pelo menos dois resolvedores DNS clássicos e não pode ser combinado com DoH")
 	}
 
 	limiter := ratelimit.New(cfg.RateLimit)
@@ -376,9 +523,11 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	txtCollector := evidence.NewTXTCollector(allSignatures)
 	srvCollector := evidence.NewSRVCollector(res, allSignatures)
 	tlsCollector := evidence.NewTLSCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second)
+	tlsCollector.EnableAlternateSNI(checkSNI)
+	tlsCollector.SetSANRoots(sanRoots)
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
-	caaCollector := evidence.NewCAACollector()
-	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, cfg.FollowRedirects, cfg.UserAgent, cfg.FetchHeaders)
+	caaCollector := evidence.NewCAACollector(res)
+	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, false, cfg.UserAgent, cfg.FetchHeaders)
 	if err := httpCollector.Validate(); err != nil {
 		return fmt.Errorf("configurando o coletor HTTP: %w", err)
 	}
@@ -391,6 +540,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 
 	collectors := []evidence.Collector{
 		cnameCollector,
+		evidence.NewServiceBindingCollector(allSignatures),
 		mxCollector,
 		txtCollector,
 		srvCollector,
@@ -400,6 +550,39 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		httpCollector,
 		cookieCollector,
 		corsCollector,
+		evidence.NewTXTResidualCollector(),
+		evidence.NewProviderHistoryCollector(),
+	}
+	var redirectCollector *evidence.RedirectCollector
+	if cfg.FollowRedirects {
+		redirectCollector = evidence.NewRedirectCollector(res, globalClient, cfg.RedirectDepth)
+		redirectCollector.SetAllowedHosts(webHosts)
+		collectors = append(collectors, redirectCollector)
+	}
+	collectors = append(collectors, evidence.NewHTTPPostureCollector())
+	if checkVHost {
+		collectors = append(collectors, evidence.NewVHostCollector(globalClient))
+	}
+	var depsCollector *evidence.WebDependencyCollector
+	if checkWebDeps {
+		depsCollector = evidence.NewWebDependencyCollector(res, globalClient)
+		depsCollector.SetAllowedHosts(related)
+		depsCollector.SetSignatures(allSignatures)
+		collectors = append(collectors, depsCollector)
+	}
+	if checkOrigin {
+		var originTransport evidence.HTTPRawTransport
+		if len(originTargets) > 0 {
+			raw := evidence.NewNetworkHTTPRawTransport(time.Duration(cfg.Timeout) * time.Second)
+			if err := raw.SetProxy(cfg.Proxy); err != nil {
+				return fmt.Errorf("configurando proxy da confirmação de origin: %w", err)
+			}
+			originTransport = raw
+		}
+		originCollector := evidence.NewOriginCollector(originTransport)
+		originCollector.SetAllowedTargets(originTargets)
+		originCollector.SetRequestLimiter(limiter)
+		collectors = append(collectors, originCollector)
 	}
 	if cfg.CheckNS {
 		collectors = append(collectors, nsCollector)
@@ -454,7 +637,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	})
 	dispatcher, dispatcherErr := notify.NewDispatcherWithOptions(notify.DispatcherConfig{
 		Workers: 3, DiscordWebhook: cfg.DiscordWebhook, TelegramConfig: cfg.TelegramConfig,
-		MinimumSeverity: cfg.DiscordMinSeverity,
+		MinimumSeverity: cfg.DiscordMinSeverity, WebhookURL: cfg.WebhookURL, WebhookSecret: cfg.WebhookSecret,
 	})
 	if dispatcherErr != nil {
 		return fmt.Errorf("configurando notificações: %w", dispatcherErr)
@@ -491,7 +674,6 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	}
 
 	if whoisPivot && len(domains) > 0 {
-		// Pega o primeiro domínio (ou os primeiros) e faz o pivô
 		targetRoot := dns.ExtractRootDomain(domains[0])
 
 		pivotSvc := discovery.NewWhoisPivotService(globalClient)
@@ -513,6 +695,19 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 			fmt.Fprintf(os.Stderr, "[+] %d domínio(s) explicitamente autorizado(s) adicionado(s) à fila.\n", len(selected))
 		}
 	}
+	if resumeRun == "" {
+		webHosts = appendUniqueDomains(domains, related)
+	}
+	if redirectCollector != nil {
+		redirectCollector.SetAllowedHosts(webHosts)
+	}
+	if depsCollector != nil {
+		depsCollector.SetAllowedHosts(related)
+	}
+	if scanProfile != nil {
+		scanProfile.RelatedHosts = append([]string(nil), webHosts...)
+		scanProfile.AssetHosts = append([]string(nil), related...)
+	}
 	cookieCollector.SetAllowedRootDomains(domains)
 	corsCollector.SetAllowedRootDomains(domains)
 	explicitRoots := explicitRootDomains(domains)
@@ -530,20 +725,38 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	outMu := &sync.Mutex{}
 
 	for {
+		runID := resumeRun
+		if session != nil && session.RunID != "" {
+			runID = session.RunID
+			if err := db.AddTargets(runID, domains); err != nil {
+				return fmt.Errorf("ampliando execução em streaming: %w", err)
+			}
+		}
+		if runID == "" {
+			runID, err = db.StartRun(scanProfile, domains)
+			if err != nil {
+				return fmt.Errorf("registrando execução: %w", err)
+			}
+			logInfo("[*] Execução registrada: %s\n", runID)
+			if session != nil {
+				session.RunID = runID
+			}
+		}
 		batchCtx, cancelBatch := context.WithCancel(ctx)
-		// Limpa o cache do resolver no início de cada iteração do daemon
 		res.ClearCache()
 		registry.BeginBatch()
 		dispatcher.BeginBatch()
 		outputDeduper := newScanFindingDeduper()
 
 		var (
-			wg         sync.WaitGroup
-			sem        = make(chan struct{}, effectiveConcurrency)
-			found      int
-			foundMu    sync.Mutex
-			fatalMu    sync.Mutex
-			firstFatal error
+			wg          sync.WaitGroup
+			sem         = make(chan struct{}, effectiveConcurrency)
+			found       int
+			foundMu     sync.Mutex
+			fatalMu     sync.Mutex
+			firstFatal  error
+			policyMatch bool
+			policyMu    sync.Mutex
 		)
 		progress := newScanProgress(
 			len(domains),
@@ -555,43 +768,77 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		)
 		progress.Start()
 
-	domainLoop:
+		pending := append([]string(nil), domains...)
+		seen := make(map[string]struct{}, len(domains))
 		for _, domain := range domains {
-			select {
-			case <-batchCtx.Done():
-				break domainLoop
-			case sem <- struct{}{}:
+			seen[domain] = struct{}{}
+		}
+		pivoted := 0
+		for len(pending) > 0 {
+			var next []string
+			var nextMu sync.Mutex
+
+		domainLoop:
+			for _, domain := range pending {
+				select {
+				case <-batchCtx.Done():
+					break domainLoop
+				case sem <- struct{}{}:
+				}
+
+				wg.Add(1)
+				go func(d string) {
+					defer wg.Done()
+					defer func() { <-sem }()
+
+					progress.HostStarted()
+					startedAt := time.Now()
+					result := processDomain(batchCtx, d, runID, registry, verifierEngine, autoClaimer, res, db, dispatcher, cfg, scanProfile, explicitRoots, outputDeduper, debugLog, outMu, &found, &foundMu)
+					progress.HostFinished(result)
+					if result.PolicyMatch {
+						policyMu.Lock()
+						policyMatch = true
+						policyMu.Unlock()
+					}
+					_ = db.MarkTarget(runID, d, outcomeStatus(result.Outcome), result.FatalErr)
+					if pivotSAN && len(result.Candidates) > 0 {
+						nextMu.Lock()
+						added := queueSANs(seen, result.Candidates, maxSANPivotHosts-pivoted)
+						next = append(next, added...)
+						pivoted += len(added)
+						nextMu.Unlock()
+					}
+					if result.FatalErr != nil {
+						fatalMu.Lock()
+						if firstFatal == nil {
+							firstFatal = result.FatalErr
+							cancelBatch()
+						}
+						fatalMu.Unlock()
+					}
+					if result.Outcome != domainCanceled {
+						detail := result.Outcome.String()
+						if result.Classification != "" {
+							detail += ", " + result.Classification
+						}
+						debugLog.Printf("Concluído %s em %s (%s)", d, time.Since(startedAt).Round(time.Millisecond), detail)
+					}
+				}(domain)
 			}
 
-			wg.Add(1)
-
-			go func(d string) {
-				defer wg.Done()
-				defer func() { <-sem }()
-
-				progress.HostStarted()
-				startedAt := time.Now()
-				result := processDomain(batchCtx, d, registry, verifierEngine, autoClaimer, res, db, dispatcher, cfg, scanProfile, explicitRoots, outputDeduper, debugLog, outMu, &found, &foundMu)
-				progress.HostFinished(result)
-				if result.FatalErr != nil {
-					fatalMu.Lock()
-					if firstFatal == nil {
-						firstFatal = result.FatalErr
-						cancelBatch()
-					}
-					fatalMu.Unlock()
-				}
-				if result.Outcome != domainCanceled {
-					detail := result.Outcome.String()
-					if result.Classification != "" {
-						detail += ", " + result.Classification
-					}
-					debugLog.Printf("Concluído %s em %s (%s)", d, time.Since(startedAt).Round(time.Millisecond), detail)
-				}
-			}(domain)
+			wg.Wait()
+			fatalMu.Lock()
+			stopped := firstFatal != nil
+			fatalMu.Unlock()
+			if stopped || batchCtx.Err() != nil || len(next) == 0 {
+				break
+			}
+			sort.Strings(next)
+			domains = appendUniqueDomains(domains, next)
+			progress.AddTotal(len(next))
+			logInfo("[*] Pivô SAN adicionou %d host(s) autorizado(s) à fila.\n", len(next))
+			pending = next
 		}
-
-		wg.Wait()
 		cancelBatch()
 		progress.Stop()
 
@@ -611,8 +858,21 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		}
 		logInfo("%s\n", formatScanBreakdown(snapshot))
 		if fatalErr != nil {
+			_ = db.FinishRun(runID, "FAILED")
 			return fmt.Errorf("a execução agressiva foi interrompida para impedir novas alterações externas: %w", fatalErr)
 		}
+		if ctx.Err() != nil {
+			_ = db.FinishRun(runID, "INTERRUPTED")
+		} else if session == nil {
+			_ = db.FinishRun(runID, "COMPLETED")
+		}
+		policyMu.Lock()
+		failedPolicy := policyMatch
+		policyMu.Unlock()
+		if failedPolicy {
+			return fmt.Errorf("a política --fail-on-severity=%s foi acionada", scanFailOn)
+		}
+		resumeRun = ""
 
 		if daemonInterval == 0 {
 			break
@@ -625,7 +885,6 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 			if err == nil && !latestChange.IsZero() {
 				timeSinceChange := time.Since(latestChange)
 				if timeSinceChange < 24*time.Hour {
-					// Temp quente! Aceleramos
 					actualInterval = daemonInterval / 4
 					if actualInterval < 1*time.Minute {
 						actualInterval = 1 * time.Minute
@@ -647,6 +906,16 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	return nil
 }
 
+func sameScanProfile(current, stored *core.ScanProfile) bool {
+	if current == nil || stored == nil {
+		return current == stored
+	}
+	left, right := *current, *stored
+	left.RelatedHosts, right.RelatedHosts = nil, nil
+	left.RelatedImpactInScope, right.RelatedImpactInScope = false, false
+	return reflect.DeepEqual(left, right)
+}
+
 func validateAggressiveRuntime(enabled bool, daemonInterval string) error {
 	if enabled && strings.TrimSpace(daemonInterval) != "" {
 		return fmt.Errorf("--aggressive não pode ser combinado com --daemon; a reivindicação automática exige uma execução única e explícita")
@@ -664,6 +933,11 @@ func enableCheckAllModules() {
 	checkHeaders = true
 	checkShadowIT = true
 	checkRedirects = true
+	checkVHost = true
+	checkWebDeps = true
+	followRedirects = true
+	checkSNI = true
+	checkOrigin = true
 }
 
 func parseSRVOwners(raw string) ([]string, error) {
@@ -737,9 +1011,9 @@ func parseFramingAllowlist(raw string) ([]string, error) {
 	return authorities, nil
 }
 
-func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanProfile {
+func currentScanProfile(cfg *config.Config, signatureDigest string, webHosts, assetHosts []string) *core.ScanProfile {
 	profile := &core.ScanProfile{
-		Version:         1,
+		Version:         3,
 		SignatureDigest: signatureDigest,
 		CheckNS:         cfg != nil && cfg.CheckNS,
 		CheckCloud:      checkCloud,
@@ -749,15 +1023,26 @@ func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanPr
 		CheckHeaders:    checkHeaders,
 		CheckShadowIT:   checkShadowIT,
 		CheckRedirects:  checkRedirects,
+		CheckVHost:      checkVHost,
+		CheckWebDeps:    checkWebDeps,
+		CheckSNI:        true,
+		AlternateSNI:    checkSNI,
+		PivotSAN:        pivotSAN,
+		SANRoots:        append([]string(nil), sanRoots...),
+		CheckOrigin:     checkOrigin,
+		OriginTargets:   append([]string(nil), originTargets...),
 		CheckEvasion:    checkEvasion,
 		CheckFraming:    checkFraming,
 		Aggressive:      aggressive,
 		CheckSRV:        checkSRV,
 		SRVOwners:       append([]string(nil), configuredSRVOwners...),
 		SRVExhaustive:   srvExhaustive,
+		RelatedHosts:    append([]string(nil), webHosts...),
+		AssetHosts:      append([]string(nil), assetHosts...),
 	}
 	if cfg != nil {
 		profile.FollowRedirects = cfg.FollowRedirects
+		profile.RedirectDepth = cfg.RedirectDepth
 		profile.FetchHeaders = cfg.FetchHeaders
 		profile.UserAgent = cfg.UserAgent
 	}
@@ -770,6 +1055,10 @@ func cloneScanProfile(profile *core.ScanProfile) *core.ScanProfile {
 	}
 	clone := *profile
 	clone.SRVOwners = append([]string(nil), profile.SRVOwners...)
+	clone.RelatedHosts = append([]string(nil), profile.RelatedHosts...)
+	clone.AssetHosts = append([]string(nil), profile.AssetHosts...)
+	clone.SANRoots = append([]string(nil), profile.SANRoots...)
+	clone.OriginTargets = append([]string(nil), profile.OriginTargets...)
 	return &clone
 }
 
@@ -787,6 +1076,7 @@ func explicitRootDomains(domains []string) map[string]struct{} {
 func processDomain(
 	ctx context.Context,
 	domain string,
+	runID string,
 	registry *evidence.Registry,
 	verifierEngine *verifiers.Engine,
 	autoClaimer *claimengine.Engine,
@@ -843,6 +1133,14 @@ func processDomain(
 		Classification: "UNKNOWN",
 		ScanProfile:    cloneScanProfile(scanProfile),
 	}
+	previous, loadErr := db.GetHost(ctx, domain)
+	if loadErr != nil {
+		debugLog.Printf("Erro ao carregar histórico de %s: %v", domain, loadErr)
+		return domainResult{Outcome: domainFailed}
+	}
+	if previous != nil {
+		analysis.PreviousEvidences = append([]core.Evidence(nil), previous.Evidences...)
+	}
 	if analysis.ScanProfile != nil {
 		_, analysis.ScanProfile.RelatedImpactInScope = explicitRoots[dns.ExtractRootDomain(domain)]
 	}
@@ -889,6 +1187,10 @@ func processDomain(
 		if fatalClaimErr != nil {
 			return domainResult{Outcome: domainFailed, FatalErr: errors.Join(fatalClaimErr, fmt.Errorf("persistindo a análise de %s: %w", domain, err))}
 		}
+		return domainResult{Outcome: domainFailed}
+	}
+	if err := db.SaveObservation(runID, analysis); err != nil {
+		debugLog.Printf("Erro ao registrar observação de %s: %v", domain, err)
 		return domainResult{Outcome: domainFailed}
 	}
 	dispatcher.DispatchAnalysis(analysis)
@@ -1017,6 +1319,21 @@ func processDomain(
 		Classification: analysis.Classification,
 		Actionable:     countable,
 		FatalErr:       fatalClaimErr,
+		Candidates:     append([]string(nil), analysis.SANCandidates...),
+		PolicyMatch:    scanFailOn != "" && isActionableClassification(analysis.Classification) && cliSeverityAllows(analysis.Classification, scanFailOn),
+	}
+}
+
+func outcomeStatus(outcome domainOutcome) string {
+	switch outcome {
+	case domainCompleted:
+		return "DONE"
+	case domainSkipped:
+		return "SKIPPED"
+	case domainFailed:
+		return "FAILED"
+	default:
+		return "PENDING"
 	}
 }
 
@@ -1028,6 +1345,24 @@ func effectiveHostConcurrency(requested, operationsPerSecond int) int {
 		return operationsPerSecond
 	}
 	return requested
+}
+
+func queueSANs(seen map[string]struct{}, candidates []string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	var queued []string
+	for _, candidate := range candidates {
+		if len(queued) >= limit || !validScanDomain(candidate) {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		queued = append(queued, candidate)
+	}
+	return queued
 }
 
 func validateScanOutputModes(cfg *config.Config) error {

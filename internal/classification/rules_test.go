@@ -180,6 +180,39 @@ func TestContextOnlyEvidenceIsInsufficientRatherThanUnknown(t *testing.T) {
 	}
 }
 
+func TestWebFindingsStayMisconfigured(t *testing.T) {
+	for _, evidenceType := range []string{
+		"DANGLING_REDIRECT", "HTTPS_DOWNGRADE_REDIRECT", "CSP_DANGLING_DEPENDENCY", "DEAD_ASSET_HTTP",
+	} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Weight: 20, Confidence: 90}}}
+		if got := Classify(analysis); got != LevelMisconfigured {
+			t.Fatalf("%s foi classificado como %s", evidenceType, got)
+		}
+	}
+}
+
+func TestWebContextDoesNotCreateFinding(t *testing.T) {
+	for _, evidenceType := range []string{
+		"HTTP_REDIRECT_HOP", "REDIRECT_TARGET_OUT_OF_SCOPE", "VHOST_DIFFERENTIAL", "HTTP_WILDCARD_DETECTED",
+	} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Confidence: 100}}}
+		if got := Classify(analysis); got != LevelInsufficientEvidence {
+			t.Fatalf("%s foi classificado como %s", evidenceType, got)
+		}
+	}
+}
+
+func TestOriginNeedsDirectConfirmation(t *testing.T) {
+	candidate := &core.HostAnalysis{Evidences: []core.Evidence{{Type: "ORIGIN_EXPOSURE_CANDIDATE"}}}
+	if got := Classify(candidate); got != LevelInsufficientEvidence {
+		t.Fatalf("candidato passivo = %s", got)
+	}
+	confirmed := &core.HostAnalysis{Evidences: []core.Evidence{{Type: "ORIGIN_DIRECT_MATCH"}}}
+	if got := Classify(confirmed); got != LevelExposed {
+		t.Fatalf("origin confirmado = %s", got)
+	}
+}
+
 func TestDelegationStateMachineDoesNotBecomeGenericTakeover(t *testing.T) {
 	tests := []struct{ evidenceType, want string }{
 		{"DELEGATION_BROKEN", LevelDelegationBroken},
@@ -206,9 +239,18 @@ func TestFailedRoute53NameserverMatchDowngradesCandidate(t *testing.T) {
 }
 
 func TestBrokenNonCNAMEVectorsRemainMisconfigurations(t *testing.T) {
-	for _, evidenceType := range []string{"MX_BROKEN", "SRV_BROKEN", "SPF_BROKEN_INCLUDE"} {
+	for _, evidenceType := range []string{"MX_BROKEN", "MX_PRIMARY_BROKEN_WITH_FALLBACK", "MX_BACKUP_BROKEN", "SRV_BROKEN", "DNSSEC_BOGUS", "SPF_BROKEN_INCLUDE"} {
 		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType}}}
 		if got := Classify(analysis); got != LevelMisconfigured {
+			t.Fatalf("%s = %s", evidenceType, got)
+		}
+	}
+}
+
+func TestTransientMailFailureIsInconclusive(t *testing.T) {
+	for _, evidenceType := range []string{"MX_UNRESOLVABLE", "SRV_UNRESOLVABLE"} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType}}}
+		if got := Classify(analysis); got != LevelInsufficientEvidence {
 			t.Fatalf("%s = %s", evidenceType, got)
 		}
 	}

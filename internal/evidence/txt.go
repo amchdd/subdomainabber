@@ -14,8 +14,6 @@ type txtTokenRule struct {
 	prefix   string
 }
 
-// Estas são observações de tokens de verificação, não provas de tokens obsoletos.
-// Confirmar obsolescência exige uma API do provedor ou uma tentativa controlada de vínculo.
 var builtinTXTTokenRules = []txtTokenRule{
 	{provider: "Google", prefix: "google-site-verification="},
 	{provider: "Microsoft 365", prefix: "ms="},
@@ -30,6 +28,7 @@ func NewTXTCollector(sigs []signatures.Fingerprint) *TXTCollector { return &TXTC
 
 func (c *TXTCollector) Collect(_ context.Context, analysis *core.HostAnalysis) error {
 	analysis.AddTestedVector("TXT")
+	c.addOwnerToken(analysis)
 	for _, record := range analysis.DNS.TXT {
 		lower := strings.ToLower(strings.TrimSpace(record))
 		for _, rule := range builtinTXTTokenRules {
@@ -50,6 +49,25 @@ func (c *TXTCollector) Collect(_ context.Context, analysis *core.HostAnalysis) e
 		}
 	}
 	return nil
+}
+
+func (c *TXTCollector) addOwnerToken(analysis *core.HostAnalysis) {
+	label := strings.Split(strings.ToLower(analysis.Host), ".")[0]
+	provider := ""
+	switch {
+	case strings.HasPrefix(label, "_github-pages-challenge-") || strings.HasPrefix(label, "_github-challenge-"):
+		provider = "GitHub"
+	case label == "asuid":
+		provider = "Microsoft Azure"
+	}
+	if provider == "" {
+		return
+	}
+	for _, record := range analysis.DNS.TXT {
+		if strings.TrimSpace(record) != "" {
+			c.addToken(analysis, provider, label, record, 90)
+		}
+	}
 }
 
 func (c *TXTCollector) addToken(analysis *core.HostAnalysis, provider, prefix, record string, confidence int) {

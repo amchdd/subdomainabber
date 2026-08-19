@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "resposta saudável com tecnologia",
+      "vector": "HTTP",
+      "expected": "HEALTHY",
+      "max_requests": 2,
+      "observed_requests": 2,
+      "analysis": {
+        "host": "healthy.example",
+        "dns_records": {},
+        "evidences": [
+          {"type": "HTTP_RESPONSE", "source": "https", "weight": 0, "confidence": 100, "metadata": {"status": "200"}},
+          {"type": "TECHNOLOGY_DETECTED", "source": "https", "weight": 0, "confidence": 90}
+        ]
+      }
+    },
+    {
+      "name": "cname órfão",
+      "vector": "CNAME",
+      "expected": "ORPHANED",
+      "max_requests": 3,
+      "observed_requests": 2,
+      "analysis": {
+        "host": "orphan.example",
+        "dns_records": {"cname": ["missing.vendor.example"]},
+        "evidences": [
+          {"type": "CNAME_DANGLING", "source": "DNS", "weight": 30, "confidence": 90}
+        ]
+      }
+    },
+    {
+      "name": "erro http genérico não promove takeover",
+      "vector": "HTTP",
+      "expected": "UNKNOWN",
+      "max_requests": 2,
+      "observed_requests": 1,
+      "analysis": {
+        "host": "generic.example",
+        "dns_records": {"cname": ["service.vendor.example"]},
+        "evidences": [
+          {"type": "CNAME_PROVIDER_MATCH", "source": "Fornecedor", "weight": 20, "confidence": 80, "metadata": {"provider_id": "vendor", "matched_cname": "service.vendor.example"}},
+          {"type": "HTTP_STATUS_404", "source": "https", "weight": 5, "confidence": 50}
+        ]
+      }
+    },
+    {
+      "name": "assinatura vinculada ao mesmo provedor",
+      "vector": "CNAME_HTTP",
+      "expected": "LIKELY_TAKEOVERABLE",
+      "max_requests": 2,
+      "observed_requests": 2,
+      "analysis": {
+        "host": "likely.example",
+        "dns_records": {"cname": ["missing.vendor.example"]},
+        "evidences": [
+          {"type": "CNAME_PROVIDER_MATCH", "source": "Fornecedor", "weight": 20, "confidence": 90, "metadata": {"provider_id": "vendor", "matched_cname": "missing.vendor.example"}},
+          {"type": "HTTP_BODY_MATCH", "source": "Fornecedor", "weight": 40, "confidence": 95, "metadata": {"provider_id": "vendor", "matched_cname": "missing.vendor.example", "rule_id": "vendor-missing", "matched_fingerprint": "resource vendor missing"}}
+        ]
+      }
+    }
+  ]
+}

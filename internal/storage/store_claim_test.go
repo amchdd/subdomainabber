@@ -83,7 +83,11 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 		Classification: "UNKNOWN",
 		TestedVectors:  []string{"DNS", "HTTP", "TLS"},
 		ScanProfile: &core.ScanProfile{
-			Version: 1, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
+			Version: 3, SignatureDigest: "sha256:test", CheckNS: true, SRVOwners: []string{"_sip._tcp"},
+			FollowRedirects: true, RedirectDepth: 7, RelatedHosts: []string{"static.example.com"},
+			AssetHosts: []string{"assets.example.com"}, CheckWebDeps: true,
+			CheckSNI: true, AlternateSNI: true, PivotSAN: true, SANRoots: []string{"example.com"}, CheckOrigin: true,
+			OriginTargets: []string{"203.0.113.10"},
 		},
 	}
 	if err := store.SaveAnalysis(analysis); err != nil {
@@ -95,6 +99,13 @@ func TestSaveAnalysisPersistsRevalidationProfile(t *testing.T) {
 	}
 	if len(hosts) != 1 || !reflect.DeepEqual(hosts[0].TestedVectors, analysis.TestedVectors) || !reflect.DeepEqual(hosts[0].ScanProfile, analysis.ScanProfile) {
 		t.Fatalf("perfil persistido incorretamente: %#v", hosts)
+	}
+	stored, err := store.GetHost(context.Background(), analysis.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil || !reflect.DeepEqual(stored.Evidences, analysis.Evidences) || !reflect.DeepEqual(stored.ScanProfile, analysis.ScanProfile) {
+		t.Fatalf("host não recuperado pelo nome: %#v", stored)
 	}
 }
 
