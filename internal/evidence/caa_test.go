@@ -15,6 +15,39 @@ func (resolver fakeCAAResolver) ResolveCAA(context.Context, string) ([]string, e
 	return append([]string(nil), resolver.records...), nil
 }
 
+type hierarchyCAAResolver struct {
+	records map[string][]string
+	calls   []string
+}
+
+func (resolver *hierarchyCAAResolver) ResolveCAA(_ context.Context, host string) ([]string, error) {
+	resolver.calls = append(resolver.calls, host)
+	return append([]string(nil), resolver.records[host]...), nil
+}
+
+func TestCAAUsesNearestAncestor(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "app.team.example.com",
+		Evidences: []core.Evidence{{Metadata: map[string]string{
+			"tls_issuer": "DigiCert TLS RSA SHA256 2020 CA1",
+		}}},
+	}
+	resolver := &hierarchyCAAResolver{records: map[string][]string{
+		"team.example.com": {"issue digicert.com"},
+		"example.com":      {"issue letsencrypt.org"},
+	}}
+
+	if err := NewCAACollector(resolver).Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if hasEvidenceType(analysis.Evidences, "CAA_ISSUER_MISMATCH") {
+		t.Fatalf("emissor foi comparado com ancestral incorreto: %+v", analysis.Evidences)
+	}
+	if len(resolver.calls) != 1 || resolver.calls[0] != "team.example.com" {
+		t.Fatalf("resolução CAA não parou no ancestral mais próximo: %v", resolver.calls)
+	}
+}
+
 func TestCAAComparesZoneAndIssuer(t *testing.T) {
 	analysis := &core.HostAnalysis{
 		Host: "app.example.com",
