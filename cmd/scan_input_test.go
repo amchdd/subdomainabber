@@ -29,6 +29,20 @@ func TestLoadScanDomainsCombinesAndDeduplicatesInputs(t *testing.T) {
 	}
 }
 
+func TestStreamScanDomainsUsesBoundedBatches(t *testing.T) {
+	var sizes []int
+	err := streamScanDomains([]string{"a.example", "b.example", "c.example"}, "", nil, false, 2, func(batch []string) error {
+		sizes = append(sizes, len(batch))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sizes) != 2 || sizes[0] != 2 || sizes[1] != 1 {
+		t.Fatalf("lotes inesperados: %v", sizes)
+	}
+}
+
 func TestLoadScanDomainsRejectsInvalidAndMissingInputs(t *testing.T) {
 	if _, err := loadScanDomains([]string{"https://example.com"}, "", nil, false); err == nil {
 		t.Fatal("URL was accepted as a DNS target")

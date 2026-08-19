@@ -116,32 +116,33 @@ func Calculate(analysis *core.HostAnalysis) Verdict {
 
 func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 	weights := map[string]float64{
-		"DNS":              20,
-		"HTTP":             20,
-		"TLS":              15,
-		"MX":               10,
-		"TXT":              10,
-		"SRV":              10,
-		"A_AAAA_ASN":       10,
-		"CAA":              5,
-		"NS_DELEGATION":    20,
-		"EMAIL":            10,
-		"SEC_HEADERS":      5,
-		"OPEN_REDIRECT":    5,
-		"AXFR":             10,
-		"DNSSEC":           5,
-		"SHADOW_IT":        5,
-		"CLOUD":            10,
-		"HTTP_MUTATOR":     10,
-		"HTTP_FRAMING_LAB": 10,
-		"HTTP_POSTURE":     5,
-		"REDIRECT_CHAIN":   5,
-		"VHOST":            5,
-		"WEB_DEPENDENCIES": 5,
-		"SNI":              5,
-		"TLS_SAN_PIVOT":    5,
-		"ORIGIN_EXPOSURE":  5,
-		"PROVIDER_HISTORY": 5,
+		"DNS":               20,
+		"HTTP":              20,
+		"TLS":               15,
+		"MX":                10,
+		"TXT":               10,
+		"SRV":               10,
+		"A_AAAA_ASN":        10,
+		"CAA":               5,
+		"NS_DELEGATION":     20,
+		"EMAIL":             10,
+		"SEC_HEADERS":       5,
+		"OPEN_REDIRECT":     5,
+		"AXFR":              10,
+		"DNSSEC":            5,
+		"SHADOW_IT":         5,
+		"CLOUD":             10,
+		"HTTP_MUTATOR":      10,
+		"HTTP_FRAMING_LAB":  10,
+		"HTTP_POSTURE":      5,
+		"REDIRECT_CHAIN":    5,
+		"VHOST":             5,
+		"WEB_DEPENDENCIES":  5,
+		"SNI":               5,
+		"TLS_SAN_DISCOVERY": 5,
+		"TLS_SAN_PIVOT":     5,
+		"ORIGIN_EXPOSURE":   5,
+		"PROVIDER_HISTORY":  5,
 	}
 	expected := map[string]bool{
 		"DNS": true, "HTTP": true, "TLS": true, "MX": true,
@@ -153,6 +154,7 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 		expected["VHOST"] = profile.CheckVHost
 		expected["WEB_DEPENDENCIES"] = profile.CheckWebDeps
 		expected["SNI"] = profile.CheckSNI
+		expected["TLS_SAN_DISCOVERY"] = profile.Version >= 3 && !profile.PivotSAN
 		expected["TLS_SAN_PIVOT"] = profile.PivotSAN
 		expected["ORIGIN_EXPOSURE"] = profile.CheckOrigin
 		expected["PROVIDER_HISTORY"] = profile.Version >= 2

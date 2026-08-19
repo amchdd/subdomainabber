@@ -55,6 +55,18 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 }
 
+func TestDefaultHTTPAnalysisFlags(t *testing.T) {
+	for _, name := range []string{"follow-redirects", "check-vhost", "check-web-deps"} {
+		flag := scanCmd.Flags().Lookup(name)
+		if flag == nil || flag.DefValue != "true" {
+			t.Fatalf("--%s não está habilitada por padrão", name)
+		}
+	}
+	if flag := scanCmd.Flags().Lookup("check-sni"); flag == nil || flag.DefValue != "false" {
+		t.Fatal("--check-sni deve continuar opcional para a variante alternativa")
+	}
+}
+
 func TestFramingRequiresSeparateConfirmationAndAllowlist(t *testing.T) {
 	if collector, err := newFramingCollectorIfAuthorized(false, false, "", time.Second); err != nil || collector != nil {
 		t.Fatalf("disabled framing = %#v, %v", collector, err)

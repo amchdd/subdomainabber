@@ -9,18 +9,22 @@ var hostAnalysisMutexInit sync.Mutex
 
 // DNSRecordSet armazena o perfil completo de resolução DNS de um host.
 type DNSRecordSet struct {
-	A          []string    `json:"a"`
-	AAAA       []string    `json:"aaaa"`
-	CNAME      []string    `json:"cname"` // Cadeia resolvida.
-	NS         []string    `json:"ns"`
-	MX         []string    `json:"mx"`
-	MXRecords  []MXRecord  `json:"mx_records,omitempty"`
-	TXT        []string    `json:"txt"`
-	SRV        []string    `json:"srv"`
-	SRVRecords []SRVRecord `json:"srv_records,omitempty"`
-	SOA        []string    `json:"soa,omitempty"`
-	CAA        []string    `json:"caa,omitempty"`
-	PTR        []string    `json:"ptr,omitempty"`
+	A          []string         `json:"a"`
+	AAAA       []string         `json:"aaaa"`
+	CNAME      []string         `json:"cname"` // Cadeia resolvida.
+	DNAME      []DNAMERecord    `json:"dname,omitempty"`
+	NS         []string         `json:"ns"`
+	MX         []string         `json:"mx"`
+	MXRecords  []MXRecord       `json:"mx_records,omitempty"`
+	TXT        []string         `json:"txt"`
+	SRV        []string         `json:"srv"`
+	SRVRecords []SRVRecord      `json:"srv_records,omitempty"`
+	SOA        []string         `json:"soa,omitempty"`
+	CAA        []string         `json:"caa,omitempty"`
+	PTR        []string         `json:"ptr,omitempty"`
+	HTTPS      []ServiceBinding `json:"https,omitempty"`
+	SVCB       []ServiceBinding `json:"svcb,omitempty"`
+	Consensus  []DNSConsensus   `json:"consensus,omitempty"`
 }
 
 // Evidence representa uma observação isolada coletada durante a análise.
@@ -119,6 +123,7 @@ type ScanProfile struct {
 	CheckVHost           bool     `json:"check_vhost,omitempty"`
 	CheckWebDeps         bool     `json:"check_web_dependencies,omitempty"`
 	CheckSNI             bool     `json:"check_sni,omitempty"`
+	AlternateSNI         bool     `json:"alternate_sni,omitempty"`
 	PivotSAN             bool     `json:"pivot_san,omitempty"`
 	SANRoots             []string `json:"san_roots,omitempty"`
 	CheckOrigin          bool     `json:"check_origin,omitempty"`
@@ -132,9 +137,11 @@ type ScanProfile struct {
 	FollowRedirects      bool     `json:"follow_redirects,omitempty"`
 	RedirectDepth        int      `json:"redirect_depth,omitempty"`
 	RelatedHosts         []string `json:"related_hosts,omitempty"`
+	AssetHosts           []string `json:"asset_hosts,omitempty"`
 	FetchHeaders         bool     `json:"fetch_headers,omitempty"`
 	UserAgent            string   `json:"user_agent,omitempty"`
 	RelatedImpactInScope bool     `json:"related_impact_in_scope,omitempty"`
+	DNSConsensus         bool     `json:"dns_consensus,omitempty"`
 }
 
 type UnknownProviderEvidence struct {

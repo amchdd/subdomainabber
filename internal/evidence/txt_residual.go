@@ -3,6 +3,7 @@ package evidence
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
 )
@@ -40,12 +41,19 @@ func (*TXTResidualCollector) Collect(_ context.Context, analysis *core.HostAnaly
 }
 
 func providerFamily(id string) string {
-	switch id {
-	case "github", "github_pages":
+	id = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(id)), "-", "_")
+	switch {
+	case id == "aws", id == "amazon", id == "cloudfront", strings.HasPrefix(id, "aws_"), strings.HasPrefix(id, "amazon_"):
+		return "aws"
+	case id == "cloudflare", strings.HasPrefix(id, "cloudflare_"):
+		return "cloudflare"
+	case id == "fastly", strings.HasPrefix(id, "fastly_"):
+		return "fastly"
+	case id == "github", strings.HasPrefix(id, "github_"):
 		return "github"
-	case "google", "google_workspace":
+	case id == "google", strings.HasPrefix(id, "google_"):
 		return "google"
-	case "microsoft_365", "microsoft_azure", "microsoft_entra_id", "microsoft_intune":
+	case id == "azure", id == "microsoft", strings.HasPrefix(id, "azure_"), strings.HasPrefix(id, "microsoft_"):
 		return "microsoft"
 	default:
 		return id

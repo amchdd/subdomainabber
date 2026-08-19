@@ -13,17 +13,38 @@ import (
 
 type routedTLSDialer struct {
 	states map[string]*tls.ConnectionState
+	names  []string
 }
 
-func (dialer routedTLSDialer) DialTLSContext(_ context.Context, _, _ string, config *tls.Config) (*tls.ConnectionState, error) {
+func (dialer *routedTLSDialer) DialTLSContext(_ context.Context, _, _ string, config *tls.Config) (*tls.ConnectionState, error) {
+	dialer.names = append(dialer.names, config.ServerName)
 	return dialer.states[config.ServerName], nil
+}
+
+func TestSNIWithoutNameRunsByDefault(t *testing.T) {
+	primary := testCert("app.example.com", "Issuer A")
+	fallback := testCert("default.example.net", "Issuer B")
+	dialer := &routedTLSDialer{states: map[string]*tls.ConnectionState{
+		"app.example.com": {PeerCertificates: []*x509.Certificate{primary}},
+		"":                {PeerCertificates: []*x509.Certificate{fallback}},
+	}}
+	collector := NewTLSCollector(nil, time.Second)
+	collector.SetDialer(dialer)
+	analysis := &core.HostAnalysis{Host: "app.example.com", DNS: core.DNSRecordSet{A: []string{"192.0.2.10"}}}
+
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if evidenceCount(analysis, "SNI_CERT_MISMATCH") != 1 || len(dialer.names) != 2 || dialer.names[1] != "" {
+		t.Fatalf("comparação SNI padrão inesperada: nomes=%v evidências=%+v", dialer.names, analysis.Evidences)
+	}
 }
 
 func TestSNIFindsDifferentCert(t *testing.T) {
 	primary := testCert("app.example.com", "Issuer A")
 	fallback := testCert("default.example.net", "Issuer B")
 	collector := NewTLSCollector(nil, time.Second)
-	collector.SetDialer(routedTLSDialer{states: map[string]*tls.ConnectionState{
+	collector.SetDialer(&routedTLSDialer{states: map[string]*tls.ConnectionState{
 		"app.example.com":   {PeerCertificates: []*x509.Certificate{primary}},
 		"":                  {PeerCertificates: []*x509.Certificate{fallback}},
 		"probe.example.com": {PeerCertificates: []*x509.Certificate{fallback}},
@@ -53,6 +74,21 @@ func TestSANPivotKeepsAllowedNames(t *testing.T) {
 	}
 	if len(analysis.SANCandidates) != 1 || analysis.SANCandidates[0] != "api.example.com" {
 		t.Fatalf("candidatos SAN inesperados: %#v", analysis.SANCandidates)
+	}
+}
+
+func TestSANDiscoveryKeepsRelatedNamesWithoutPivot(t *testing.T) {
+	cert := testCert("app.example.com", "Issuer")
+	cert.DNSNames = []string{"app.example.com", "api.example.com", "outside.example.net"}
+	collector := NewTLSCollector(nil, time.Second)
+	collector.SetDialer(fixedTLSStateDialer{state: &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}})
+	analysis := &core.HostAnalysis{Host: "app.example.com", DNS: core.DNSRecordSet{A: []string{"192.0.2.10"}}}
+
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if len(analysis.SANCandidates) != 1 || analysis.SANCandidates[0] != "api.example.com" {
+		t.Fatalf("descoberta SAN inesperada: %#v", analysis.SANCandidates)
 	}
 }
 

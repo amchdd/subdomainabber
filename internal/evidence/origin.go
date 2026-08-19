@@ -23,10 +23,11 @@ type OriginCollector struct {
 	transport HTTPRawTransport
 	allowed   map[string]struct{}
 	limiter   interface{ Wait(context.Context) error }
+	lookup    func(context.Context, string, string) ([]net.IP, error)
 }
 
 func NewOriginCollector(transport HTTPRawTransport) *OriginCollector {
-	return &OriginCollector{transport: transport, allowed: make(map[string]struct{})}
+	return &OriginCollector{transport: transport, allowed: make(map[string]struct{}), lookup: net.DefaultResolver.LookupIP}
 }
 
 func (collector *OriginCollector) Phase() CollectorPhase { return PhaseImpact }
@@ -106,7 +107,7 @@ func (collector *OriginCollector) candidates(analysis *core.HostAnalysis) []orig
 
 	cdnID := cdnProviderID(analysis.CDN)
 	for _, candidate := range analysis.CloudIPCandidates {
-		if candidate.ProviderID != "" && cdnID != "" && candidate.ProviderID != cdnID {
+		if candidate.ProviderID != "" && cdnID != "" && providerFamily(candidate.ProviderID) != cdnID {
 			add(originCandidate{target: candidate.IP, source: candidate.Provider, kind: "dns"})
 		}
 	}
@@ -126,6 +127,10 @@ func (collector *OriginCollector) confirm(ctx context.Context, analysis *core.Ho
 	if collector.transport == nil {
 		return
 	}
+	dialTarget := collector.dialTarget(ctx, candidate.target)
+	if dialTarget == "" {
+		return
+	}
 	payload, err := buildRawRequest("GET", "/", standardRawHeaders(analysis.Host, "close"), nil)
 	if err != nil {
 		return
@@ -142,7 +147,7 @@ func (collector *OriginCollector) confirm(ctx context.Context, analysis *core.Ho
 			serverName = ""
 		}
 		target := core.MutationContext{
-			DialHost: candidate.target, DialPort: port, HTTPAuthority: analysis.Host,
+			DialHost: dialTarget, DialPort: port, HTTPAuthority: analysis.Host,
 			TLSServerName: serverName, Scheme: scheme, Baseline: baseline,
 		}
 		matches := 0
@@ -163,19 +168,46 @@ func (collector *OriginCollector) confirm(ctx context.Context, analysis *core.Ho
 			Type: "ORIGIN_DIRECT_MATCH", Source: candidate.source,
 			Description: "O destino permitido reproduziu a resposta da aplicação ao receber o Host e o SNI originais.",
 			Weight:      20, Confidence: 95,
-			Metadata: map[string]string{"target": candidate.target, "scheme": scheme, "status": strconv.Itoa(baseline.StatusCode), "cdn": analysis.CDN, "confirmations": "2"},
+			Metadata: map[string]string{"target": candidate.target, "dial_target": dialTarget, "scheme": scheme, "status": strconv.Itoa(baseline.StatusCode), "cdn": analysis.CDN, "confirmations": "2"},
 		})
 		return
 	}
 }
 
+func (collector *OriginCollector) dialTarget(ctx context.Context, target string) string {
+	if ip := net.ParseIP(target); ip != nil {
+		if publicOriginIP(ip) {
+			return ip.String()
+		}
+		return ""
+	}
+	if collector.lookup == nil {
+		return ""
+	}
+	addresses, err := collector.lookup(ctx, "ip", target)
+	if err != nil {
+		return ""
+	}
+	for _, address := range addresses {
+		if publicOriginIP(address) {
+			return address.String()
+		}
+	}
+	return ""
+}
+
+func publicOriginIP(ip net.IP) bool {
+	return ip != nil && ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
+}
+
 func normalizeOriginTarget(value string) string {
-	value = strings.TrimSpace(strings.Trim(value, "[]"))
+	value = strings.TrimSpace(value)
 	if host, _, err := net.SplitHostPort(value); err == nil {
 		value = host
 	}
+	value = strings.Trim(value, "[]")
 	if ip := net.ParseIP(value); ip != nil {
-		if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		if !publicOriginIP(ip) {
 			return ""
 		}
 		return ip.String()
@@ -202,9 +234,11 @@ func cdnProviderID(name string) string {
 	case strings.Contains(name, "cloudfront"), strings.Contains(name, "amazon"):
 		return "aws"
 	case strings.Contains(name, "azure"):
-		return "microsoft-azure"
+		return "microsoft"
 	case strings.Contains(name, "google"):
-		return "google-cloud"
+		return "google"
+	case strings.Contains(name, "fastly"):
+		return "fastly"
 	default:
 		return ""
 	}

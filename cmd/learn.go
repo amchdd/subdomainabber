@@ -52,6 +52,15 @@ var learnCmd = &cobra.Command{
 			fmt.Printf("Base do provedor: %s\n", cand.TargetCNAME)
 			fmt.Printf("Status HTTP:      %s\n", cand.StatusCode)
 			fmt.Printf("Título da página: %s\n", cand.PageTitle)
+			if cand.BodyHash != "" {
+				fmt.Printf("Hash do corpo:       %s\n", cand.BodyHash)
+			}
+			if cand.Server != "" {
+				fmt.Printf("Servidor:            %s\n", cand.Server)
+			}
+			if cand.TLSIssuer != "" {
+				fmt.Printf("Emissor TLS:         %s\n", cand.TLSIssuer)
+			}
 			fmt.Println("----------------------------------------------------------------")
 		}
 		return nil

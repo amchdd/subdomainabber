@@ -45,12 +45,14 @@ func (dialer *DefaultTLSDialer) DialTLSContext(ctx context.Context, network, add
 }
 
 type TLSCollector struct {
-	sigs     []signatures.Fingerprint
-	dialer   TLSDialer
-	limiter  interface{ Wait(context.Context) error }
-	checkSNI bool
-	sanRoots map[string]struct{}
-	sniName  func(string) string
+	sigs        []signatures.Fingerprint
+	dialer      TLSDialer
+	limiter     interface{ Wait(context.Context) error }
+	checkSNI    bool
+	altSNI      bool
+	discoverSAN bool
+	sanRoots    map[string]struct{}
+	sniName     func(string) string
 }
 
 func NewTLSCollector(sigs []signatures.Fingerprint, timeout time.Duration) *TLSCollector {
@@ -59,7 +61,7 @@ func NewTLSCollector(sigs []signatures.Fingerprint, timeout time.Duration) *TLSC
 	}
 	return &TLSCollector{
 		sigs: sigs, dialer: &DefaultTLSDialer{Timeout: timeout},
-		sanRoots: make(map[string]struct{}), sniName: randomSNIName,
+		checkSNI: true, discoverSAN: true, sanRoots: make(map[string]struct{}), sniName: randomSNIName,
 	}
 }
 
@@ -75,6 +77,16 @@ func (collector *TLSCollector) SetRequestLimiter(limiter interface{ Wait(context
 
 func (collector *TLSCollector) EnableSNI(enabled bool) {
 	collector.checkSNI = enabled
+	collector.altSNI = enabled
+}
+
+func (collector *TLSCollector) EnableAlternateSNI(enabled bool) {
+	collector.checkSNI = true
+	collector.altSNI = enabled
+}
+
+func (collector *TLSCollector) EnableSANDiscovery(enabled bool) {
+	collector.discoverSAN = enabled
 }
 
 func (collector *TLSCollector) SetSANRoots(roots []string) {
@@ -212,9 +224,9 @@ func (collector *TLSCollector) addCertificateState(analysis *core.HostAnalysis, 
 func (collector *TLSCollector) inspectSNI(ctx context.Context, analysis *core.HostAnalysis, endpoint string, baseline core.TLSObservation) error {
 	analysis.AddTestedVector("SNI")
 	root := dns.ExtractRootDomain(analysis.Host)
-	probes := []struct{ mode, name string }{
-		{mode: "no_sni"},
-		{mode: "alternate_sni", name: collector.sniName(root)},
+	probes := []struct{ mode, name string }{{mode: "no_sni"}}
+	if collector.altSNI {
+		probes = append(probes, struct{ mode, name string }{mode: "alternate_sni", name: collector.sniName(root)})
 	}
 	for _, probe := range probes {
 		if err := collector.wait(ctx); err != nil {
@@ -242,26 +254,34 @@ func (collector *TLSCollector) inspectSNI(ctx context.Context, analysis *core.Ho
 }
 
 func (collector *TLSCollector) addSANCandidates(analysis *core.HostAnalysis, observation core.TLSObservation) {
-	if len(collector.sanRoots) == 0 {
+	if !collector.discoverSAN && len(collector.sanRoots) == 0 {
 		return
 	}
-	analysis.AddTestedVector("TLS_SAN_PIVOT")
+	root := dns.ExtractRootDomain(analysis.Host)
+	if len(collector.sanRoots) > 0 {
+		analysis.AddTestedVector("TLS_SAN_PIVOT")
+	} else {
+		analysis.AddTestedVector("TLS_SAN_DISCOVERY")
+	}
 	added := 0
 	for _, san := range observation.SANs {
-		if added >= maxSANCandidates || strings.HasPrefix(san, "*.") || strings.EqualFold(san, analysis.Host) || !collector.allowedSAN(san) {
+		if added >= maxSANCandidates || strings.HasPrefix(san, "*.") || strings.EqualFold(san, analysis.Host) || !collector.allowedSAN(san, root) {
 			continue
 		}
 		analysis.AddSANCandidate(san)
 		analysis.AddEvidence(core.Evidence{
 			Type: "TLS_SAN_CANDIDATE", Source: "TLS",
-			Description: "Um SAN relacionado foi emitido como candidato autorizado para o pipeline.",
+			Description: "Um SAN relacionado foi registrado como candidato passivo.",
 			Weight:      0, Confidence: 100, Metadata: map[string]string{"host": san},
 		})
 		added++
 	}
 }
 
-func (collector *TLSCollector) allowedSAN(host string) bool {
+func (collector *TLSCollector) allowedSAN(host, root string) bool {
+	if len(collector.sanRoots) == 0 {
+		return root != "" && dns.ExtractRootDomain(host) == root
+	}
 	for root := range collector.sanRoots {
 		if host == root || strings.HasSuffix(host, "."+root) {
 			return true

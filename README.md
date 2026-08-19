@@ -16,17 +16,16 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 
 ## O que a ferramenta faz
 
-- coleta e correlaciona CNAME, delegação NS, MX, SRV, TXT/SPF, A/AAAA, HTTP e TLS;
+- coleta e correlaciona CNAME, DNAME, HTTPS/SVCB, delegação NS, MX, SRV, TXT/SPF, A/AAAA, HTTP e TLS;
+- compara respostas de vários resolvedores para distinguir consenso, propagação, visão dividida e resultado inconclusivo;
 - vincula assinaturas HTTP específicas ao provedor e ao CNAME observados;
 - separa takeover, exposição, configuração quebrada e candidatos que ainda exigem prova de reivindicabilidade;
-- armazena resultados e instantâneos em SQLite para revalidação posterior;
-- oferece saída em texto, JSON Lines e modos de explicação;
-- preserva evidências independentes de CNAME, NS, MX, SRV, SPF, IP e AXFR no mesmo host, sem ocultar achados secundários;
+- armazena execuções e observações completas em SQLite para retomada, comparação e replay local;
+- oferece saída em texto, JSON Lines, SARIF e bundles forenses assinados;
 - roteia verificadores ativos somente para provedores e CNAMEs compatíveis;
 - permite módulos ativos opcionais para exposição em nuvem, AXFR, redirecionamentos e outras verificações;
-- aprofunda cadeias CNAME, fallback MX, destinos SRV, CAA, DNSSEC e mudanças históricas de provedor;
-- registra cadeias de redirecionamento, compara vhosts e correlaciona CSP e subrecursos HTML com seus destinos DNS;
-- compara certificados com SNI ausente ou alternativo, registra SANs relacionados, detecta drift e correlaciona possíveis origens atrás de CDN/WAF;
+- analisa por padrão cadeias de redirect, postura HTTP→HTTPS, vhosts, TLS sem SNI, SANs relacionados e dependências web; a confirmação direta de origin continua opcional;
+- correlaciona histórico de certificados e provedores, CAA, DNSSEC, cookies, CORS e tokens TXT residuais;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
 - oferece reivindicações reais e auditáveis para o Amazon S3 e o Amazon Route 53 no modo agressivo, com prova de controle e tentativa imediata de liberação.
 
@@ -34,15 +33,13 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 
 | Vetor | Tratamento atual |
 |---|---|
-| CNAME | cadeia recursiva com limite e detecção de ciclo, vínculo com o provedor, assinatura HTTP, TLS, verificadores e Mutator |
+| CNAME | vínculo com o provedor, assinatura HTTP, TLS, verificadores e Mutator |
+| DNAME/HTTPS/SVCB | preserva aliases, prioridades e parâmetros; a correlação com provedor usa assinaturas DNS existentes e não comprova reivindicabilidade |
 | NS | corte de zona autoritativo, visão da zona pai, registros de cola (glue) e DS; Amazon Route 53 pode provar controle por reivindicação temporária autorizada |
-| MX | preserva preferência, distingue fallback funcional e relata destinos quebrados sem ignorar alternativas saudáveis |
-| SRV | preserva nome, prioridade, peso, porta e destino, seguindo CNAME do alvo antes de avaliar seu estado |
-| TXT/SPF | observa tokens TXT sem declarar obsolescência; SPF mantém a cadeia e usa o RCODE DNS real |
-| CAA/DNSSEC | correlaciona autorizadores CAA com o emissor TLS e distingue falha DNSSEC de SERVFAIL inconclusivo |
+| MX | segue CNAME, considera prioridade e alternativas saudáveis; registrabilidade e controle de entrega permanecem não verificados |
+| SRV | preserva nome, prioridade, peso e porta, segue CNAME e oferece enumeração controlada por `--check-srv` |
+| TXT/SPF | classifica tokens possivelmente residuais sem afirmar exploração; SPF mantém a cadeia e usa o RCODE DNS real |
 | A/AAAA | correlaciona ASN e provedor de nuvem e produz somente um candidato para revisão quando há sinais adicionais; portas fechadas não provam IP desalocado |
-| HTTP | preserva cada hop da cadeia, identifica destinos sem resolução, compara backend padrão e correlaciona dependências CSP/HTML |
-| TLS | registra fingerprint, serial, emissor e SANs; compara SNI e histórico sem transformar divergência isolada em takeover |
 | AXFR | tratado como exposição de informação, nunca como controle da zona |
 
 Delegações seguem estados próprios: `DELEGATION_BROKEN`, `DELEGATION_TAKEOVER_CANDIDATE`, `DELEGATION_CLAIMABILITY_VERIFIED` e `ZONE_CONTROL_CONFIRMED`. A implementação passiva produz apenas os dois primeiros; o adaptador do Amazon Route 53 pode produzir o último por criação temporária e correspondência exata do conjunto de NS.
@@ -135,6 +132,15 @@ subdomainabber scan -l hosts.txt --json --silent
 
 # Explicação da classificação
 subdomainabber scan -l hosts.txt --explain
+
+# Lista extensa com memória limitada e checkpoint no SQLite
+subdomainabber scan -l hosts.txt --stream --batch-size 1000
+
+# Consenso DNS entre vários resolvedores
+subdomainabber scan -l hosts.txt --dns-consensus
+
+# Política de saída para CI
+subdomainabber scan -l hosts.txt --fail-on-severity high
 ```
 
 Por padrão, a ferramenta aceita até 50 hosts em processamento simultâneo, tempo limite de rede de 5 segundos por operação e limite global de 10 operações por segundo. Quando o limite de taxa está ativo, a quantidade efetiva de hosts em processamento é limitada ao menor valor entre `--concurrency` e `--rl`; portanto, `--concurrency 50 --rl 10` executa dez hosts simultaneamente e evita que algum host fique indefinidamente sem oportunidade de execução. O tempo aguardando uma permissão do limitador não consome o tempo limite de rede.
@@ -153,7 +159,7 @@ subdomainabber scan -l hosts.txt --concurrency 10 --timeout 8 --rl 5
 
 ## Módulos ativos e níveis de risco
 
-As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização concedida pelo programa.
+Cadeias de redirect, comparação de vhost, dependências web passivas, TLS sem SNI e descoberta passiva de SANs fazem parte da análise padrão. As opções booleanas padrão aceitam `=false`. Consultas HTTP a assets e redirects para outros domínios só são habilitados pelos hosts informados em `--related-hosts`.
 
 | Opção | Comportamento |
 |---|---|
@@ -161,18 +167,22 @@ As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização con
 | `--check-ns` | Ativa o catálogo de NS orientado a provedores; o modo passivo gera um candidato e `--aggressive` pode provar Amazon Route 53 por correspondência exata. |
 | `--check-srv [--srv-owners ...]` | Enumera nomes comuns (`_sip._tcp`, `_autodiscover._tcp` etc.) uma vez por domínio registrável ou usa uma lista controlada. Nomes SRV recebidos diretamente também são analisados. |
 | `--srv-exhaustive` | Com `--check-srv`, repete a enumeração em cada nome de host. É mais lento e só deve ser usado quando o escopo realmente possui zonas SRV em subdomínios arbitrários. |
+| `--follow-redirects[=false] [--redirect-depth N]` | Ativo por padrão. Registra cada hop, segue destinos no mesmo domínio registrável e classifica destinos sem DNS ou recursos removidos. O limite aceito é de 1 a 20. |
+| `--check-vhost[=false]` | Ativo por padrão. Compara a linha de base com dois valores benignos de `Host` para identificar wildcard HTTP e backend padrão. |
+| `--check-web-deps[=false] [--related-hosts ...]` | A extração de CSP/HTML, o encadeamento CNAME e a correlação DNS são padrão. `--related-hosts` também permite consultar o status HTTP dos assets informados. |
+| `--check-sni` | Acrescenta um SNI alternativo à comparação padrão realizada sem SNI. |
+| `--pivot-san --san-roots ...` | A descoberta passiva de SANs relacionados é padrão; esta opção adiciona os nomes aceitos como novos candidatos da varredura. |
+| `--check-origin [--origin-allowlist ...]` | Correlaciona sinais de DNS, TLS e headers. A confirmação direta exige allowlist e nunca conecta a endereços privados. |
 | `--check-dnssec` | Distingue falha de validação DNSSEC, SERVFAIL inconclusivo e resposta validada. |
-| `--follow-redirects [--redirect-depth N]` | Registra cada hop da cadeia e classifica destinos sem DNS ou recursos removidos. O limite aceito é de 1 a 20. |
-| `--check-vhost` | Compara a linha de base com valores benignos de `Host` para identificar wildcard HTTP e backend padrão. |
-| `--check-web-deps --related-hosts ...` | Extrai referências de CSP e HTML, segue CNAME e verifica o estado DNS dos hosts relacionados. |
-| `--check-sni` | Compara o certificado observado com SNI ausente e com um nome alternativo no mesmo endpoint. |
-| `--pivot-san --san-roots ...` | Registra SANs não curinga das raízes indicadas como novos candidatos da varredura. |
-| `--check-origin [--origin-allowlist ...]` | Correlaciona sinais DNS, TLS e HTTP; a lista opcional habilita confirmação direta nos endereços informados. |
 | `--evasion` | Executa cinco sondas HTTP brutas de requisição única somente quando a linha de base aparenta bloqueio. Não executa CL.TE/TE.CL. |
 | `--whois-pivot --whois-pivot-confirm --whois-pivot-allowlist ...` | Descobre domínios relacionados por WHOIS e só inclui na varredura os domínios registráveis presentes na lista permitida. A confirmação não substitui a leitura do escopo do programa. |
 | `--check-framing` | Laboratório CL.TE/TE.CL de risco elevado. Exige também confirmação e lista de permissões controlada. |
 | `--aggressive` | Habilita validação ativa no Amazon S3 e no Amazon Route 53. Exige confirmação, lista de permissões exata e credenciais capazes de criar e excluir o recurso temporário. |
 | `--discord-webhook` | Envia achados relevantes da varredura inicial ao Discord. Prefira `SABBER_DISCORD_WEBHOOK` para não gravar o segredo no histórico do shell. |
+| `--webhook` | Envia o mesmo evento para um endpoint HTTPS genérico, assinado por HMAC-SHA256 com `SABBER_WEBHOOK_SECRET`. |
+| `--dns-consensus` | Exige quórum entre pelo menos dois resolvedores DNS clássicos. Não pode ser combinado com DoH. |
+| `--stream --batch-size N` | Deduplica a entrada em disco e processa lotes limitados em uma única execução retomável. |
+| `--fail-on-severity` | Retorna código diferente de zero se houver achado no limiar informado ou acima dele. |
 | `--discord-min-severity` | Define o limiar `info`, `low`, `medium`, `high` ou `critical`. O padrão `medium` elimina HEALTHY e misconfigurações de baixa prioridade. |
 | `--min-severity` | Filtra a CLI pela mesma escala do Discord. Vazio mantém todos os achados acionáveis; `medium` é útil para focar takeover provável, delegação candidata e exposições. |
 | `--show-inconclusive` | Exibe blocos humanos para `UNKNOWN` e `INSUFFICIENT_EVIDENCE`. Por padrão, esses estados ficam no JSON/SQLite e não poluem o stdout. |
@@ -229,12 +239,27 @@ subdomainabber --db programa.db scan -l hosts.txt
 subdomainabber --db programa.db verify --only-risky
 subdomainabber --db programa.db db stats
 subdomainabber --db programa.db db export --format json
+subdomainabber --db programa.db db export --format sarif --out resultados.sarif
+subdomainabber --db programa.db db history
+subdomainabber --db programa.db db diff EXECUCAO_A EXECUCAO_B
+subdomainabber --db programa.db db replay EXECUCAO
+subdomainabber --db programa.db scan --resume EXECUCAO
+```
+
+Cada `scan` registra os alvos como pendentes antes do processamento. Uma interrupção mantém os alvos não concluídos disponíveis para `--resume`; repita as mesmas opções do perfil original. `db replay` reexecuta somente classificação e confiança sobre as observações armazenadas, sem acesso à rede.
+
+Para preservar uma execução como evidência verificável, gere as chaves uma vez, assine o bundle e valide-o com uma chave pública confiável:
+
+```bash
+subdomainabber --db programa.db db keygen --private-out bundle.key --public-out bundle.pub
+subdomainabber --db programa.db db bundle EXECUCAO --out evidencias.json --signing-key bundle.key
+subdomainabber db verify-bundle evidencias.json --public-key bundle.pub
 ```
 
 `verify` revalida os hosts já armazenados no banco; ele não recebe uma lista de entrada.
 A varredura inicial envia achados relevantes como `DISCOVERED`, e o `verify` envia mudanças posteriores. Configure o Discord com `--discord-webhook` ou `SABBER_DISCORD_WEBHOOK`; o Telegram usa `SABBER_TELEGRAM=bot_token:chat_id`.
 
-A CLI e o Discord usam a mesma seleção de evidência causal em vez da primeira evidência coletada. Configurações incorretas mostram o vetor e a causa concreta, como `HTTP_OPEN_REDIRECT` ou `SPF_BROKEN_INCLUDE`; ausência isolada de HSTS/CSP permanece apenas como contexto. Delegações e AXFR são agrupadas pela zona. Assim, dezenas de hosts abaixo de `projects.example.com` geram apenas um achado por corte de zona. Na saída humana da CLI, `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` ficam ocultos por padrão; use `--show-inconclusive` para revisão. Eles nunca são enviados como descobertas ao Discord, inclusive quando o limiar é `info`.
+A CLI e o Discord usam a mesma seleção de evidência causal em vez da primeira evidência coletada. Achados do mesmo hostname aparecem em um único bloco, com o principal primeiro e os demais como relacionados. Configurações incorretas mostram o vetor e a causa concreta, como `HTTP_OPEN_REDIRECT` ou `SPF_BROKEN_INCLUDE`; ausência isolada de HSTS/CSP permanece apenas como contexto. Delegações e AXFR são agrupadas pela zona. Assim, dezenas de hosts abaixo de `projects.example.com` geram apenas um achado por corte de zona. Na saída humana da CLI, `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` ficam ocultos por padrão; use `--show-inconclusive` para revisão. Eles nunca são enviados como descobertas ao Discord, inclusive quando o limiar é `info`.
 
 | Severidade | Classificações típicas |
 |---|---|
@@ -261,12 +286,14 @@ subdomainabber fingerprints validate
 subdomainabber fingerprints list
 subdomainabber fingerprints coverage
 subdomainabber benchmark synthetic
+subdomainabber benchmark corpus
 subdomainabber benchmark regression datasets/regression
 subdomainabber benchmark mutator
 ```
 
 `benchmark gold` acessa somente as entradas marcadas como verificadas no conjunto informado e deve obedecer às mesmas regras de autorização da ferramenta. Os arquivos em `datasets/gold` são modelos inativos com domínios reservados; substitua-os apenas por infraestrutura controlada e registre data, autorização, referência e evidência esperada.
 `benchmark mutator` é totalmente local e mede sondas executadas, rejeições, diferenças, assinaturas, falsos positivos e falsos negativos em comportamentos controlados de borda e origem. Os nomes das pilhas descrevem comportamentos simulados, não alegações de vulnerabilidade de fornecedores.
+`benchmark corpus` reclassifica o conjunto versionado em `datasets/corpus`, agrupa os resultados por vetor e também falha quando um caso ultrapassa seu orçamento de requisições.
 
 ## Configuração
 
@@ -292,6 +319,7 @@ A saída humana da CLI, a ajuda, o progresso, os erros e as notificações são 
 - o benchmark local atual demonstra os invariantes do Mutator, mas não substitui medições contra versões reais de Nginx, HAProxy, Envoy, Traefik e Apache;
 - MX/SRV/SPF/TXT/A/AAAA continuam candidatos até que exista um adaptador de criação, prova de controle e liberação para o provedor;
 - algumas verificações dependem de conectividade e APIs de terceiros;
+- consenso DNS requer pelo menos dois resolvedores clássicos e fica indisponível quando DoH está ativo;
 - `--timeout` limita a operação de rede após a permissão do limitador de taxa; ele não é um prazo total para concluir todos os módulos de um host;
 - apenas `TAKEN_OVER`, `ZONE_CONTROL_CONFIRMED` e resultados com prova ativa estruturada significam controle comprovado; as demais classificações representam achados para investigação.
 
@@ -308,6 +336,7 @@ go test ./... -count=1
 go test -race ./... -count=1
 go run . fingerprints validate --strict
 go run . benchmark synthetic
+go run . benchmark corpus
 go run . benchmark regression datasets/regression
 go run . benchmark mutator
 go build ./...

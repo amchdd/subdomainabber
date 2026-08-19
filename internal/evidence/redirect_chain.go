@@ -106,7 +106,8 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 				chain.FinalURL = next.String()
 				chain.StoppedReason = "OUT_OF_SCOPE"
 				analysis.AddEvidence(core.Evidence{
-					Type: "REDIRECT_TARGET_OUT_OF_SCOPE", Source: scheme,
+					Type:        "REDIRECT_TARGET_OUT_OF_SCOPE",
+					Source:      scheme,
 					Description: "A cadeia apontou para um hostname não incluído em --related-hosts; a consulta foi interrompida.",
 					Weight:      0, Confidence: 100,
 					Metadata: map[string]string{"target_url": next.String(), "target_host": nextHost},
@@ -167,7 +168,7 @@ func (collector *RedirectCollector) addDanglingEvidence(analysis *core.HostAnaly
 	}
 	analysis.AddEvidence(core.Evidence{
 		Type: "DANGLING_REDIRECT", Source: "HTTP",
-		Description: "O destino permitido da cadeia não possui resolução utilizável ou responde como recurso removido.",
+		Description: "O destino da cadeia não possui resolução utilizável ou responde como recurso removido.",
 		Weight:      20, Confidence: 90, Metadata: metadata,
 	})
 }

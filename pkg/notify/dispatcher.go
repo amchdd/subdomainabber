@@ -20,6 +20,8 @@ type DispatcherConfig struct {
 	DiscordWebhook  string
 	TelegramConfig  string
 	MinimumSeverity string
+	WebhookURL      string
+	WebhookSecret   string
 }
 
 type Dispatcher struct {
@@ -72,6 +74,13 @@ func NewDispatcherWithOptions(options DispatcherConfig) (*Dispatcher, error) {
 	}
 	if telegram != nil {
 		notifiers = append(notifiers, telegram)
+	}
+	if options.WebhookURL != "" {
+		webhook, webhookErr := NewWebhookNotifier(options.WebhookURL, options.WebhookSecret)
+		if webhookErr != nil {
+			return nil, webhookErr
+		}
+		notifiers = append(notifiers, webhook)
 	}
 	if options.Workers < 1 {
 		options.Workers = 1

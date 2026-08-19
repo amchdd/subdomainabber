@@ -74,6 +74,24 @@ func TestRedirectFindsDanglingTarget(t *testing.T) {
 	}
 }
 
+func TestRedirectFollowsRelatedSibling(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return webResponse(request, http.StatusMovedPermanently, "https://missing.example.com/final", ""), nil
+	})}
+	resolver := &fakeWebResolver{status: map[string]core.DNSStatus{"missing.example.com": core.DNSStatusNXDomain}}
+	analysis := &core.HostAnalysis{Host: "app.example.com"}
+	analysis.SetHTTPObservation("http", newHTTPObservation("http", http.StatusMovedPermanently, nil, nil, true, 0, "", ""))
+
+	collector := NewRedirectCollector(resolver, client, 5)
+	collector.SetAllowedHosts([]string{"missing.example.com"})
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if !hasEvidenceType(analysis.Evidences, "DANGLING_REDIRECT") {
+		t.Fatalf("redirect para host relacionado não foi analisado: %+v", analysis.Evidences)
+	}
+}
+
 func TestRedirectFindsRemovedResource(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path == "/" {

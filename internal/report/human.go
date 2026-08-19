@@ -29,6 +29,42 @@ type fieldLine struct {
 	value string
 }
 
+var genericRanks = map[string]int{
+	"ORIGIN_DIRECT_MATCH":                80,
+	"DNSSEC_BOGUS":                       60,
+	"CLOUD_S3_WRITABLE":                  75,
+	"CLOUD_S3_LISTABLE":                  65,
+	"CLOUD_AZURE_BLOB_LISTABLE":          65,
+	"CLOUD_GCS_LISTABLE":                 65,
+	"DANGLING_REDIRECT":                  55,
+	"HTTPS_DOWNGRADE_REDIRECT":           50,
+	"HTTP_HTTPS_PORT_INCONSISTENT":       45,
+	"HTTP_HTTPS_REDIRECT_MISSING":        40,
+	"CSP_DANGLING_DEPENDENCY":            55,
+	"SUBRESOURCE_DANGLING":               55,
+	"DEAD_ASSET_REFERENCE":               50,
+	"DEAD_ASSET_HTTP":                    35,
+	"HTTP_OPEN_REDIRECT":                 55,
+	"HTTP_HSTS_MISSING":                  30,
+	"HTTP_CSP_MISSING":                   30,
+	"EMAIL_SPF_PERMISSIVE":               40,
+	"EMAIL_SPF_MISSING":                  25,
+	"EMAIL_DMARC_MISSING":                25,
+	"TLS_EXPIRED":                        35,
+	"TLS_SELF_SIGNED":                    30,
+	"TLS_MISMATCH":                       30,
+	"SNI_CERT_MISMATCH":                  25,
+	"TLS_CERTIFICATE_DRIFT":              20,
+	"CAA_POLICY_INCONSISTENT":            20,
+	"CAA_ISSUER_MISMATCH":                20,
+	"TXT_OWNERSHIP_TOKEN_RESIDUAL":       15,
+	"PROVIDER_MIGRATION_DETECTED":        25,
+	"PROVIDER_MIGRATION_STALE_REFERENCE": 30,
+	"SHADOW_IT_DETECTED":                 20,
+	"RELATED_DOMAIN_COOKIE_SCOPE":        35,
+	"RELATED_DOMAIN_CORS_CREDENTIALS":    40,
+}
+
 func Human(analysis *core.HostAnalysis, confidence string) string {
 	return HumanWithOptions(analysis, confidence, Options{})
 }
@@ -89,6 +125,7 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 		evidence := firstEvidence(analysis, "DNS_AXFR_ALLOWED")
 		findings = append(findings, humanFinding{rank: 70, body: axfrFinding(analysis, confidence, options), summary: "AXFR — " + valueOr(evidence.Metadata["zone"], analysis.Host)})
 	}
+	findings = append(findings, genericFindings(analysis, confidence, options)...)
 	if len(findings) == 0 {
 		if options.SuppressDelegation && analysis.Delegation != nil &&
 			hasAny(analysis, "DELEGATION_BROKEN", "DELEGATION_TAKEOVER_CANDIDATE",
@@ -101,6 +138,70 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 
 	sort.SliceStable(findings, func(left, right int) bool { return findings[left].rank > findings[right].rank })
 	return consolidateFindings(findings, options)
+}
+
+func genericFindings(analysis *core.HostAnalysis, confidence string, options Options) []humanFinding {
+	seen := make(map[string]struct{})
+	var findings []humanFinding
+	for _, evidence := range analysis.Evidences {
+		rank, ok := genericRanks[evidence.Type]
+		if !ok {
+			continue
+		}
+		resource := evidenceResource(analysis.Host, evidence)
+		key := evidence.Type + "|" + resource
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		findings = append(findings, humanFinding{
+			rank: rank, body: evidenceFinding(analysis, evidence, resource, confidence, options),
+			summary: evidenceSummary(analysis, evidence, resource),
+		})
+	}
+	return findings
+}
+
+func evidenceFinding(analysis *core.HostAnalysis, evidence core.Evidence, resource, confidence string, options Options) string {
+	context := finding.Primary(&core.HostAnalysis{Host: analysis.Host, DNS: analysis.DNS, Evidences: []core.Evidence{evidence}})
+	description := presentation.EvidenceDescription(evidence)
+	evidenceLine := evidence.Type
+	if description != "" {
+		evidenceLine += " — " + description
+	}
+	return renderBlock(
+		presentation.Classification(analysis.Classification), resource,
+		toneForClassification(analysis.Classification),
+		[]fieldLine{
+			{"Categoria", category(analysis.Classification)},
+			{"Vetor", context.Vector},
+			{"Evidência principal", evidenceLine},
+			{"Fonte", evidence.Source},
+			{"Confiança da análise", confidence},
+			{"Próximo passo", "revise a evidência estruturada e confirme o impacto no escopo"},
+		}, options,
+	)
+}
+
+func evidenceSummary(analysis *core.HostAnalysis, evidence core.Evidence, resource string) string {
+	context := finding.Primary(&core.HostAnalysis{Host: analysis.Host, DNS: analysis.DNS, Evidences: []core.Evidence{evidence}})
+	description := presentation.EvidenceDescription(evidence)
+	if description == "" {
+		description = evidence.Type
+	}
+	if resource != analysis.Host {
+		return fmt.Sprintf("%s — %s: %s", context.Vector, resource, description)
+	}
+	return context.Vector + " — " + description
+}
+
+func evidenceResource(host string, evidence core.Evidence) string {
+	for _, key := range []string{"target_host", "host", "target", "url", "location", "zone"} {
+		if value := strings.TrimSpace(evidence.Metadata[key]); value != "" {
+			return value
+		}
+	}
+	return host
 }
 
 func consolidateFindings(findings []humanFinding, options Options) string {

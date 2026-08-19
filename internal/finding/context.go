@@ -107,8 +107,20 @@ func Primary(analysis *core.HostAnalysis) Context {
 		result.Vector = "HTTP"
 	case strings.HasPrefix(selected.Type, "TLS_"):
 		result.Vector = "TLS"
+	case strings.HasPrefix(selected.Type, "SNI_"):
+		result.Vector = "TLS"
+	case strings.HasPrefix(selected.Type, "CAA_"):
+		result.Vector = "CAA"
+	case strings.HasPrefix(selected.Type, "TXT_"):
+		result.Vector = "TXT"
 	case strings.HasPrefix(selected.Type, "DNSSEC_"):
 		result.Vector = "DNSSEC"
+	case strings.HasPrefix(selected.Type, "PROVIDER_MIGRATION_"):
+		result.Vector = "HISTORY"
+	case selected.Type == "RELATED_DOMAIN_COOKIE_SCOPE":
+		result.Vector = "COOKIE"
+	case strings.HasPrefix(selected.Type, "RELATED_DOMAIN_CORS_") || strings.HasPrefix(selected.Type, "CORS_"):
+		result.Vector = "CORS"
 	case strings.HasPrefix(selected.Type, "CLOUD_") || selected.Type == "STALE_CLOUD_IP_CANDIDATE":
 		result.Vector = "CLOUD"
 	case strings.HasPrefix(selected.Type, "ORIGIN_"):

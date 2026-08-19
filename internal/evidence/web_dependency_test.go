@@ -78,3 +78,26 @@ func TestWebDepsRejectBareNXDomain(t *testing.T) {
 		t.Fatalf("NXDOMAIN sem provedor foi tratado como órfão: %+v", analysis)
 	}
 }
+
+func TestWebDepsAnalyzeWithoutFollowingAsset(t *testing.T) {
+	body := `<script src="https://static.example.test/app.js"></script>`
+	analysis := &core.HostAnalysis{Host: "www.example.test"}
+	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusOK, nil, []byte(body), true, 0, "", ""))
+	resolver := &fakeWebResolver{status: map[string]core.DNSStatus{"cdn.provider.test": core.DNSStatusNXDomain}, chains: map[string][]string{
+		"static.example.test": {"cdn.provider.test"},
+	}}
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return webResponse(request, http.StatusOK, "", "ok"), nil
+	})}
+	collector := NewWebDependencyCollector(resolver, client)
+	collector.SetSignatures([]signatures.Fingerprint{{Service: "Provider Test", CNames: []string{"provider.test"}}})
+
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 0 || len(analysis.WebDependencies) != 1 || !hasEvidenceType(analysis.Evidences, "SUBRESOURCE_DANGLING") {
+		t.Fatalf("análise passiva inesperada: requests=%d análise=%+v", requests, analysis)
+	}
+}
