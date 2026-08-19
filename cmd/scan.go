@@ -66,6 +66,11 @@ var (
 	checkHeaders        bool
 	checkShadowIT       bool
 	checkRedirects      bool
+	checkVHost          bool
+	checkWebDeps        bool
+	followRedirects     bool
+	redirectDepth       int
+	relatedHosts        string
 	checkSNI            bool
 	pivotSAN            bool
 	sanRootsRaw         string
@@ -131,7 +136,7 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanInputList, "list", "l", "", "Arquivo com um host por linha")
 	scanCmd.Flags().StringVar(&discordWebhook, "discord-webhook", "", "Webhook do Discord para achados relevantes (prefira SABBER_DISCORD_WEBHOOK para não expor o segredo no histórico)")
 
-	scanCmd.Flags().BoolVar(&checkAll, "check-all", false, "Habilita NS, SRV, AXFR, nuvem, e-mail, cabeçalhos, DNSSEC, Shadow IT e redirecionamentos; não habilita evasão, framing nem modo agressivo")
+	scanCmd.Flags().BoolVar(&checkAll, "check-all", false, "Habilita todos os módulos seguros; não habilita evasão, framing nem modo agressivo")
 	scanCmd.Flags().BoolVar(&checkCloud, "check-cloud", false, "Habilitar verificação de exposição em nuvem (S3, Blob e GCS)")
 	scanCmd.Flags().BoolVar(&checkAXFR, "check-axfr", false, "Tentar transferência de zona (AXFR)")
 	scanCmd.Flags().BoolVar(&checkDNSSEC, "check-dnssec", false, "Inspecionar artefatos DNSSEC sem afirmar validação da cadeia")
@@ -142,6 +147,11 @@ func init() {
 	scanCmd.Flags().BoolVar(&checkHeaders, "check-headers", false, "Analisar cabeçalhos de segurança HTTP (HSTS/CSP)")
 	scanCmd.Flags().BoolVar(&checkShadowIT, "check-shadowit", false, "Detectar serviços SaaS não monitorados (Shadow IT)")
 	scanCmd.Flags().BoolVar(&checkRedirects, "check-redirects", false, "Realizar testes ativos de redirecionamento aberto (Open Redirect)")
+	scanCmd.Flags().BoolVar(&followRedirects, "follow-redirects", false, "Registrar a cadeia de redirecionamentos HTTP")
+	scanCmd.Flags().IntVar(&redirectDepth, "redirect-depth", 0, "Limite de hops da cadeia de redirecionamentos (1 a 20)")
+	scanCmd.Flags().BoolVar(&checkVHost, "check-vhost", false, "Comparar respostas com variações benignas de Host")
+	scanCmd.Flags().BoolVar(&checkWebDeps, "check-web-deps", false, "Correlacionar CSP e subrecursos com hosts órfãos permitidos")
+	scanCmd.Flags().StringVar(&relatedHosts, "related-hosts", "", "Hosts adicionais para redirects e dependências, separados por vírgula ou arquivo")
 	scanCmd.Flags().BoolVar(&checkSNI, "check-sni", false, "Comparar certificados no mesmo IP com SNI ausente ou alternativo")
 	scanCmd.Flags().BoolVar(&pivotSAN, "pivot-san", false, "Emitir SANs autorizados como novos candidatos da varredura")
 	scanCmd.Flags().StringVar(&sanRootsRaw, "san-roots", "", "Raízes DNS autorizadas para --pivot-san, separadas por vírgula ou arquivo")
@@ -220,6 +230,12 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if checkAll {
 		enableCheckAllModules()
 	}
+	if followRedirects {
+		cliCfg.FollowRedirects = true
+	}
+	if redirectDepth != 0 {
+		cliCfg.RedirectDepth = redirectDepth
+	}
 	if checkSRV {
 		configuredSRVOwners, err = parseSRVOwners(srvOwners)
 		if err != nil {
@@ -251,6 +267,11 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		cliCfg.Silent = true
 	}
 	cfg = config.Merge(cfg, cliCfg)
+	related, err := parseRelatedHosts(relatedHosts)
+	if err != nil {
+		return err
+	}
+	webHosts := appendUniqueDomains(domains, related)
 	applyGlobalFlags(cfg)
 	if err := config.ValidateRuntime(cfg); err != nil {
 		return fmt.Errorf("configuração de execução inválida: %w", err)
@@ -333,7 +354,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	if err != nil {
 		return err
 	}
-	scanProfile := currentScanProfile(cfg, signatureDigest)
+	scanProfile := currentScanProfile(cfg, signatureDigest, webHosts)
 
 	logInfo("[*] Assinaturas carregadas: %d\n", len(allSignatures))
 
@@ -403,7 +424,7 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 	tlsCollector.SetSANRoots(sanRoots)
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
 	caaCollector := evidence.NewCAACollector()
-	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, cfg.FollowRedirects, cfg.UserAgent, cfg.FetchHeaders)
+	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, false, cfg.UserAgent, cfg.FetchHeaders)
 	if err := httpCollector.Validate(); err != nil {
 		return fmt.Errorf("configurando o coletor HTTP: %w", err)
 	}
@@ -425,6 +446,23 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 		httpCollector,
 		cookieCollector,
 		corsCollector,
+	}
+	var redirectCollector *evidence.RedirectCollector
+	if cfg.FollowRedirects {
+		redirectCollector = evidence.NewRedirectCollector(res, globalClient, cfg.RedirectDepth)
+		redirectCollector.SetAllowedHosts(webHosts)
+		collectors = append(collectors, redirectCollector)
+	}
+	collectors = append(collectors, evidence.NewHTTPPostureCollector())
+	if checkVHost {
+		collectors = append(collectors, evidence.NewVHostCollector(globalClient))
+	}
+	var depsCollector *evidence.WebDependencyCollector
+	if checkWebDeps {
+		depsCollector = evidence.NewWebDependencyCollector(res, globalClient)
+		depsCollector.SetAllowedHosts(webHosts)
+		depsCollector.SetSignatures(allSignatures)
+		collectors = append(collectors, depsCollector)
 	}
 	if checkOrigin {
 		var originTransport evidence.HTTPRawTransport
@@ -551,6 +589,16 @@ func runScan(ctx context.Context, domains, claimTargets []string) (runErr error)
 			domains = appendUniqueDomains(domains, selected)
 			fmt.Fprintf(os.Stderr, "[+] %d domínio(s) explicitamente autorizado(s) adicionado(s) à fila.\n", len(selected))
 		}
+	}
+	webHosts = appendUniqueDomains(domains, related)
+	if redirectCollector != nil {
+		redirectCollector.SetAllowedHosts(webHosts)
+	}
+	if depsCollector != nil {
+		depsCollector.SetAllowedHosts(webHosts)
+	}
+	if scanProfile != nil {
+		scanProfile.RelatedHosts = append([]string(nil), webHosts...)
 	}
 	cookieCollector.SetAllowedRootDomains(domains)
 	corsCollector.SetAllowedRootDomains(domains)
@@ -731,6 +779,9 @@ func enableCheckAllModules() {
 	checkHeaders = true
 	checkShadowIT = true
 	checkRedirects = true
+	checkVHost = true
+	checkWebDeps = true
+	followRedirects = true
 	checkSNI = true
 	checkOrigin = true
 }
@@ -806,7 +857,7 @@ func parseFramingAllowlist(raw string) ([]string, error) {
 	return authorities, nil
 }
 
-func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanProfile {
+func currentScanProfile(cfg *config.Config, signatureDigest string, webHosts []string) *core.ScanProfile {
 	profile := &core.ScanProfile{
 		Version:         2,
 		SignatureDigest: signatureDigest,
@@ -818,6 +869,8 @@ func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanPr
 		CheckHeaders:    checkHeaders,
 		CheckShadowIT:   checkShadowIT,
 		CheckRedirects:  checkRedirects,
+		CheckVHost:      checkVHost,
+		CheckWebDeps:    checkWebDeps,
 		CheckSNI:        checkSNI,
 		PivotSAN:        pivotSAN,
 		SANRoots:        append([]string(nil), sanRoots...),
@@ -829,9 +882,11 @@ func currentScanProfile(cfg *config.Config, signatureDigest string) *core.ScanPr
 		CheckSRV:        checkSRV,
 		SRVOwners:       append([]string(nil), configuredSRVOwners...),
 		SRVExhaustive:   srvExhaustive,
+		RelatedHosts:    append([]string(nil), webHosts...),
 	}
 	if cfg != nil {
 		profile.FollowRedirects = cfg.FollowRedirects
+		profile.RedirectDepth = cfg.RedirectDepth
 		profile.FetchHeaders = cfg.FetchHeaders
 		profile.UserAgent = cfg.UserAgent
 	}
@@ -844,6 +899,7 @@ func cloneScanProfile(profile *core.ScanProfile) *core.ScanProfile {
 	}
 	clone := *profile
 	clone.SRVOwners = append([]string(nil), profile.SRVOwners...)
+	clone.RelatedHosts = append([]string(nil), profile.RelatedHosts...)
 	clone.SANRoots = append([]string(nil), profile.SANRoots...)
 	clone.OriginTargets = append([]string(nil), profile.OriginTargets...)
 	return &clone

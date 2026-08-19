@@ -9,6 +9,9 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Adicionado
 
+- análise de cadeias HTTP com evidência por hop, limite configurável e detecção de destino sem resolução ou recurso removido;
+- comparação de vhost para identificar wildcard HTTP e backend padrão;
+- correlação de CSP e subrecursos HTML com CNAME, estado DNS, provedor e resposta de assets relacionados;
 - comparação TLS com SNI ausente e alternativo, descoberta controlada de SANs e histórico de drift do certificado;
 - correlação de possíveis origens atrás de CDN/WAF com confirmação direta limitada aos endereços informados;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;

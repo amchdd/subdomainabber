@@ -113,6 +113,7 @@ type Config struct {
 	ConfigFile string `yaml:"-"`
 
 	FollowRedirects bool   `yaml:"follow_redirects"`
+	RedirectDepth   int    `yaml:"redirect_depth"`
 	UserAgent       string `yaml:"user_agent"`
 	DoH             string `yaml:"doh"`
 	FetchHeaders    bool   `yaml:"headers"`
@@ -132,6 +133,7 @@ type Config struct {
 	concurrencyConfigured bool
 	timeoutConfigured     bool
 	rateLimitConfigured   bool
+	redirectConfigured    bool
 }
 
 // Defaults retorna uma configuração com valores padrão sensatos para uso
@@ -143,6 +145,7 @@ func Defaults() *Config {
 		Timeout:            5,
 		DBPath:             "subdomainabber.db",
 		RateLimit:          10,
+		RedirectDepth:      10,
 		AwsRegion:          "us-east-1",
 		DiscordMinSeverity: "medium",
 	}
@@ -166,6 +169,7 @@ func LoadFile(path string) (*Config, error) {
 		Concurrency *int `yaml:"concurrency"`
 		Timeout     *int `yaml:"timeout"`
 		RateLimit   *int `yaml:"rate_limit"`
+		Redirect    *int `yaml:"redirect_depth"`
 	}
 	if err := yaml.Unmarshal(data, &configuredNumbers); err != nil {
 		return nil, fmt.Errorf("config: erro ao interpretar os valores numéricos de %q: %w", path, err)
@@ -173,6 +177,7 @@ func LoadFile(path string) (*Config, error) {
 	cfg.concurrencyConfigured = configuredNumbers.Concurrency != nil
 	cfg.timeoutConfigured = configuredNumbers.Timeout != nil
 	cfg.rateLimitConfigured = configuredNumbers.RateLimit != nil
+	cfg.redirectConfigured = configuredNumbers.Redirect != nil
 
 	return cfg, nil
 }
@@ -250,6 +255,14 @@ func ApplyEnv(cfg *Config) error {
 			numericErrors = append(numericErrors, err)
 		} else {
 			cfg.RateLimit = n
+		}
+	}
+	if v := os.Getenv("SABBER_REDIRECT_DEPTH"); v != "" {
+		n, err := parseEnvironmentInteger("SABBER_REDIRECT_DEPTH", v)
+		if err != nil {
+			numericErrors = append(numericErrors, err)
+		} else {
+			cfg.RedirectDepth = n
 		}
 	}
 
@@ -381,6 +394,10 @@ func Merge(base, override *Config) *Config {
 	if override.RateLimit != 0 || override.rateLimitConfigured {
 		merged.RateLimit = override.RateLimit
 		merged.rateLimitConfigured = override.rateLimitConfigured
+	}
+	if override.RedirectDepth != 0 || override.redirectConfigured {
+		merged.RedirectDepth = override.RedirectDepth
+		merged.redirectConfigured = override.redirectConfigured
 	}
 
 	// Para booleanos, true em `override` sempre sobrescreve o valor anterior.

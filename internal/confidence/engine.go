@@ -134,6 +134,10 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 		"CLOUD":            10,
 		"HTTP_MUTATOR":     10,
 		"HTTP_FRAMING_LAB": 10,
+		"HTTP_POSTURE":     5,
+		"REDIRECT_CHAIN":   5,
+		"VHOST":            5,
+		"WEB_DEPENDENCIES": 5,
 		"SNI":              5,
 		"TLS_SAN_PIVOT":    5,
 		"ORIGIN_EXPOSURE":  5,
@@ -143,6 +147,10 @@ func calculateCoverage(tested []string, profile *core.ScanProfile) float64 {
 		"TXT": true, "SRV": true, "A_AAAA_ASN": true, "CAA": true,
 	}
 	if profile != nil {
+		expected["HTTP_POSTURE"] = profile.Version >= 2
+		expected["REDIRECT_CHAIN"] = profile.FollowRedirects && profile.Version >= 2
+		expected["VHOST"] = profile.CheckVHost
+		expected["WEB_DEPENDENCIES"] = profile.CheckWebDeps
 		expected["SNI"] = profile.CheckSNI
 		expected["TLS_SAN_PIVOT"] = profile.PivotSAN
 		expected["ORIGIN_EXPOSURE"] = profile.CheckOrigin

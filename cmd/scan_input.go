@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/dns"
+	"github.com/amchdd/subdomainabber/internal/domainutil"
 )
 
 const maxScanInputLine = 1024 * 1024
@@ -115,6 +116,31 @@ func validScanDomain(domain string) bool {
 		}
 	}
 	return tldHasLetter
+}
+
+func parseRelatedHosts(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	items, err := readList(raw)
+	if err != nil {
+		return nil, err
+	}
+	hosts := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		normalized, err := domainutil.NormalizeHostname(item)
+		if err != nil || !validScanDomain(normalized) {
+			return nil, fmt.Errorf("host relacionado inválido: %q", item)
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		hosts = append(hosts, normalized)
+	}
+	return hosts, nil
 }
 
 func parseSANRoots(enabled bool, raw string) ([]string, error) {

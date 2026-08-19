@@ -195,6 +195,7 @@ func cloneProfile(profile *core.ScanProfile) *core.ScanProfile {
 	}
 	clone := *profile
 	clone.SRVOwners = append([]string(nil), profile.SRVOwners...)
+	clone.RelatedHosts = append([]string(nil), profile.RelatedHosts...)
 	clone.SANRoots = append([]string(nil), profile.SANRoots...)
 	clone.OriginTargets = append([]string(nil), profile.OriginTargets...)
 	return &clone
