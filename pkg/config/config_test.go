@@ -68,6 +68,35 @@ func TestApplyEnvAndMergeSupportTemporaryAWSCredentials(t *testing.T) {
 	}
 }
 
+func TestPlatformCredentialsSupportYAMLEnvironmentAndMerge(t *testing.T) {
+	path := t.TempDir() + "/platforms.yaml"
+	data := []byte("hackerone_username: pesquisador\nhackerone_token: arquivo\nintigriti_token: arquivo-intigriti\nbugcrowd_token: arquivo-bugcrowd\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.HackerOneUsername != "pesquisador" || file.BugcrowdToken != "arquivo-bugcrowd" {
+		t.Fatalf("credenciais YAML incompletas: %#v", file)
+	}
+
+	t.Setenv("SABBER_HACKERONE_TOKEN", "ambiente-h1")
+	t.Setenv("SABBER_INTIGRITI_TOKEN", "ambiente-intigriti")
+	cfg := Merge(Defaults(), file)
+	if err := ApplyEnv(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HackerOneToken != "ambiente-h1" || cfg.IntigritiToken != "ambiente-intigriti" {
+		t.Fatalf("precedência de ambiente incorreta: %#v", cfg)
+	}
+	merged := Merge(cfg, &Config{BugcrowdToken: "sobreposto"})
+	if merged.BugcrowdToken != "sobreposto" {
+		t.Fatalf("merge não aplicou token: %#v", merged)
+	}
+}
+
 func TestApplyEnvPreservesInvalidNumericValueForRuntimeValidation(t *testing.T) {
 	t.Setenv("SABBER_RATE_LIMIT", "0")
 

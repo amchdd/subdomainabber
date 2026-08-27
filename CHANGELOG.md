@@ -10,6 +10,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 ### Adicionado
 
 - comando `recon` com fontes passivas, DNS A/AAAA/CNAME/MX/NS/SRV, scraping, geração recursiva, proveniência e retomada por checkpoint no SQLite;
+- comando `sync` para HackerOne, Intigriti e Bugcrowd, com paginação, catálogo de escopo no SQLite, expansão de wildcards, retomada e scan completo;
+- aplicação dos limites de automação, User-Agent e headers específicos importados das regras da Intigriti;
 - consenso DNS multi-resolvedor com estados de propagação, visão dividida e resultado inconclusivo;
 - coleta de DNAME, HTTPS e SVCB com preservação de parâmetros e correlação conservadora de provedor;
 - histórico de execuções, observações completas, retomada, comparação e replay local no SQLite;

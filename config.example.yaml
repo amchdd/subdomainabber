@@ -41,6 +41,12 @@ alienvault_token: ""
 certspotter_token: ""
 urlscan_token: ""
 
+# Plataformas de bug bounty. Prefira variáveis de ambiente.
+hackerone_username: ""
+hackerone_token: ""
+intigriti_token: ""
+bugcrowd_token: ""
+
 # Credenciais usadas somente pelo modo agressivo autorizado.
 aws_access_key: ""
 aws_secret_key: ""
