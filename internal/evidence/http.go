@@ -50,6 +50,7 @@ type HTTPCollector struct {
 	secChUAPlatform  string
 	secChUA          string
 	configurationErr error
+	targetHeaders    map[string]http.Header
 }
 
 func NewHTTPCollector(sigs []signatures.Fingerprint, timeout time.Duration, proxyURL string, followRedirects bool, userAgent string, fetchHeaders bool) *HTTPCollector {
@@ -181,6 +182,13 @@ func (c *HTTPCollector) SetTransport(rt http.RoundTripper) {
 	}
 }
 
+func (c *HTTPCollector) SetTargetHeaders(headers map[string]http.Header) {
+	c.targetHeaders = make(map[string]http.Header, len(headers))
+	for host, values := range headers {
+		c.targetHeaders[strings.ToLower(host)] = values.Clone()
+	}
+}
+
 func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -207,6 +215,19 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 		}
 		if c.secChUA != "" {
 			req.Header.Set("Sec-CH-UA", c.secChUA)
+		}
+		if headers := c.targetHeaders[strings.ToLower(analysis.Host)]; headers != nil {
+			if custom := headers.Get("User-Agent"); custom != "" && custom != c.userAgent {
+				req.Header.Del("Sec-CH-UA")
+				req.Header.Del("Sec-CH-UA-Platform")
+				req.Header.Del("Sec-CH-UA-Mobile")
+			}
+			for name, values := range headers {
+				req.Header.Del(name)
+				for _, value := range values {
+					req.Header.Add(name, value)
+				}
+			}
 		}
 
 		start := time.Now()

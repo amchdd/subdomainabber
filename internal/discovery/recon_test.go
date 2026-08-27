@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -220,6 +221,13 @@ func TestResultTargetsKeepsOnlyResolvedSubdomains(t *testing.T) {
 	inventory := result.Inventory()
 	if len(inventory) != 2 || inventory[0] != "api.example.test" || inventory[1] != "old.example.test" {
 		t.Fatalf("inventário incompleto: %v", inventory)
+	}
+}
+
+func TestValidateOptionsRejectsInvalidMode(t *testing.T) {
+	err := ValidateOptions(Options{Mode: Mode("unknown")})
+	if err == nil || !strings.Contains(err.Error(), "modo de recon inválido") {
+		t.Fatalf("modo inválido aceito: %v", err)
 	}
 }
 

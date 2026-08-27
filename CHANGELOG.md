@@ -10,6 +10,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 ### Adicionado
 
 - comando `recon` com fontes passivas, DNS A/AAAA/CNAME/MX/NS/SRV, scraping, geração recursiva, proveniência e retomada por checkpoint no SQLite;
+- comando `sync` para HackerOne, Intigriti e Bugcrowd, com paginação, catálogo de escopo no SQLite, expansão de wildcards, retomada e scan completo;
+- aplicação dos limites de automação, User-Agent e headers específicos importados das regras da Intigriti;
 - consenso DNS multi-resolvedor com estados de propagação, visão dividida e resultado inconclusivo;
 - coleta de DNAME, HTTPS e SVCB com preservação de parâmetros e correlação conservadora de provedor;
 - histórico de execuções, observações completas, retomada, comparação e replay local no SQLite;
@@ -55,6 +57,9 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - isolamento do catálogo de recon por raiz, reconciliação segura de nomes antigos e separação entre inventário histórico e alvos DNS acionáveis;
 - indicação explícita de recon parcial quando fontes ou limites impedem uma atualização completa;
 - retomada de checkpoints vazios sem pular as fontes passivas e uso do limite global já durante a coleta e o scraping;
+- base correta da Researcher API da Intigriti, paginação por cursor da HackerOne e detecção de ciclos nas APIs;
+- preservação dos vínculos de plataforma durante recon parcial e substituição atômica após uma coleta completa;
+- fusão determinística de targets compartilhados entre grupos da Bugcrowd e identificação de recompensas da Intigriti;
 - configurações numéricas inválidas são rejeitadas antes da criação de limitadores, canais e rotinas concorrentes; o modo daemon exige intervalo mínimo de um minuto e a enumeração impõe limites seguros de concorrência;
 - alertas NS e tentativas agressivas são deduplicados pelo corte de zona, evitando mensagens repetidas por hosts descendentes;
 - descobertas `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` nunca são enviadas ao Discord;

@@ -24,11 +24,20 @@ func SubdomainRegex(baseDomain string) *regexp.Regexp {
 
 // ScrapePage obtém uma página HTTP e extrai os subdomínios correspondentes ao domínio base.
 func ScrapePage(ctx context.Context, url string, baseDomain string, clients ...*http.Client) ([]string, error) {
+	return ScrapePageWithHeaders(ctx, url, baseDomain, nil, clients...)
+}
+
+func ScrapePageWithHeaders(ctx context.Context, url string, baseDomain string, headers http.Header, clients ...*http.Client) ([]string, error) {
 	client := scraperClient(clients...)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
 	}
 
 	resp, err := client.Do(req)

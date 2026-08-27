@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"reflect"
 	"sort"
@@ -141,8 +142,23 @@ var scanCmd = &cobra.Command{
 }
 
 type scanSession struct {
-	RunID  string
-	DBPath string
+	RunID         string
+	DBPath        string
+	Resume        bool
+	OnStart       func(string) error
+	RateLimit     int
+	TargetHeaders map[string]http.Header
+}
+
+func sessionStarted(session *scanSession, runID string) error {
+	if session == nil {
+		return nil
+	}
+	session.RunID = runID
+	if session.OnStart != nil {
+		return session.OnStart(runID)
+	}
+	return nil
 }
 
 func finishScanSession(ctx context.Context, session *scanSession, scanErr error) error {
@@ -241,6 +257,10 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	}
 	if ctx.Err() != nil {
 		return nil
+	}
+	var session *scanSession
+	if len(sessions) > 0 {
+		session = sessions[0]
 	}
 
 	// Carrega a configuração na ordem arquivo, ambiente e flags.
@@ -341,6 +361,9 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	}
 	webHosts := appendUniqueDomains(domains, related)
 	applyGlobalFlags(cfg)
+	if session != nil && session.RateLimit > 0 && session.RateLimit < cfg.RateLimit {
+		cfg.RateLimit = session.RateLimit
+	}
 	if err := config.ValidateRuntime(cfg); err != nil {
 		return fmt.Errorf("configuração de execução inválida: %w", err)
 	}
@@ -440,29 +463,29 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	}
 	defer closeStoreWithError(db, &runErr)
 	logInfo("OK\n")
-	var session *scanSession
-	if len(sessions) > 0 {
-		session = sessions[0]
-		if session != nil {
-			session.DBPath = cfg.DBPath
-		}
+	if session != nil {
+		session.DBPath = cfg.DBPath
 	}
-	if resumeRun != "" {
-		storedProfile, profileErr := db.RunProfile(ctx, resumeRun)
+	resumeID := resumeRun
+	if session != nil && session.Resume && session.RunID != "" {
+		resumeID = session.RunID
+	}
+	if resumeID != "" {
+		storedProfile, profileErr := db.RunProfile(ctx, resumeID)
 		if profileErr != nil {
 			return profileErr
 		}
 		if !sameScanProfile(scanProfile, storedProfile) {
-			return fmt.Errorf("o perfil atual difere da execução %s; repita as mesmas opções", resumeRun)
+			return fmt.Errorf("o perfil atual difere da execução %s; repita as mesmas opções", resumeID)
 		}
 		scanProfile = cloneScanProfile(storedProfile)
 		webHosts = append([]string(nil), storedProfile.RelatedHosts...)
-		domains, err = db.PendingTargets(ctx, resumeRun)
+		domains, err = db.PendingTargets(ctx, resumeID)
 		if err != nil {
 			return err
 		}
 		if len(domains) == 0 {
-			return fmt.Errorf("a execução %s não possui alvos pendentes", resumeRun)
+			return fmt.Errorf("a execução %s não possui alvos pendentes", resumeID)
 		}
 	}
 
@@ -516,6 +539,7 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	if clientErr != nil {
 		return fmt.Errorf("erro ao configurar o cliente HTTP compartilhado: %w", clientErr)
 	}
+	setTargetHeaders(globalClient, session)
 
 	cnameCollector := evidence.NewCNAMECollector(res, allSignatures)
 	nsCollector := evidence.NewNSCollector(res, allSignatures)
@@ -528,6 +552,9 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	ipCollector := evidence.NewIPCollector(res, allSignatures)
 	caaCollector := evidence.NewCAACollector(res)
 	httpCollector := evidence.NewHTTPCollector(allSignatures, time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, false, cfg.UserAgent, cfg.FetchHeaders)
+	if session != nil {
+		httpCollector.SetTargetHeaders(session.TargetHeaders)
+	}
 	if err := httpCollector.Validate(); err != nil {
 		return fmt.Errorf("configurando o coletor HTTP: %w", err)
 	}
@@ -695,7 +722,7 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 			fmt.Fprintf(os.Stderr, "[+] %d domínio(s) explicitamente autorizado(s) adicionado(s) à fila.\n", len(selected))
 		}
 	}
-	if resumeRun == "" {
+	if resumeID == "" {
 		webHosts = appendUniqueDomains(domains, related)
 	}
 	if redirectCollector != nil {
@@ -725,8 +752,8 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	outMu := &sync.Mutex{}
 
 	for {
-		runID := resumeRun
-		if session != nil && session.RunID != "" {
+		runID := resumeID
+		if session != nil && session.RunID != "" && !session.Resume {
 			runID = session.RunID
 			if err := db.AddTargets(runID, domains); err != nil {
 				return fmt.Errorf("ampliando execução em streaming: %w", err)
@@ -738,8 +765,8 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 				return fmt.Errorf("registrando execução: %w", err)
 			}
 			logInfo("[*] Execução registrada: %s\n", runID)
-			if session != nil {
-				session.RunID = runID
+			if err := sessionStarted(session, runID); err != nil {
+				return fmt.Errorf("registrando sessão da varredura: %w", err)
 			}
 		}
 		batchCtx, cancelBatch := context.WithCancel(ctx)
@@ -873,6 +900,7 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 			return fmt.Errorf("a política --fail-on-severity=%s foi acionada", scanFailOn)
 		}
 		resumeRun = ""
+		resumeID = ""
 
 		if daemonInterval == 0 {
 			break

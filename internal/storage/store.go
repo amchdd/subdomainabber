@@ -119,6 +119,10 @@ func New(dbPath string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("criando esquema de recon: %w", err)
 	}
+	if err := createPlatformSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("criando esquema de plataformas: %w", err)
+	}
 
 	if err := RunMigrations(db); err != nil {
 		db.Close()

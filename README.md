@@ -28,6 +28,7 @@ O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os ú
 - correlaciona histórico de certificados e provedores, CAA, DNSSEC, cookies, CORS e tokens TXT residuais;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
 - oferece reivindicações reais e auditáveis para o Amazon S3 e o Amazon Route 53 no modo agressivo, com prova de controle e tentativa imediata de liberação.
+- sincroniza programas e escopos acessíveis no HackerOne, Intigriti e Bugcrowd, expande os ativos DNS com recon nativo e mantém o catálogo local para novas varreduras.
 
 ### Maturidade dos vetores
 
@@ -165,6 +166,35 @@ subdomainabber --db programa.db recon -d example.com \
 O modo padrão do comando é `exhaustive`. `standard` limita a expansão a uma rodada e `passive` não gera candidatos. A detecção de wildcard é feita em cada nível da árvore DNS, e nomes que resolvem somente por IPv6 são preservados. O progresso é salvo ao fim de cada rodada; uma interrupção pode ser retomada pelo mesmo comando, pois `--resume` fica ativo por padrão. Use `--resume=false` para iniciar outra execução.
 
 A saída textual contém somente subdomínios que resolveram por A, AAAA ou CNAME e pode ser usada diretamente em pipes. Nomes históricos que não resolvem continuam preservados no inventário e no JSON; use `--show-unresolved` para incluí-los na saída textual. Quando uma fonte falha ou algum limite é atingido, o comando marca o resultado como parcial, informa o motivo no `stderr` e mantém ativos os nomes do catálogo anterior.
+
+### Sincronização de plataformas
+
+`sync` consulta todos os programas visíveis pelas credenciais configuradas, importa os escopos paginados, expande os wildcards com o recon nativo e executa uma varredura com o perfil completo. URLs e domínios exatos entram diretamente, sem ampliar o escopo. Programas, ativos, vínculos e checkpoints ficam no mesmo SQLite usado pelo restante da ferramenta.
+
+```bash
+export SABBER_HACKERONE_USERNAME="usuario-api"
+export SABBER_HACKERONE_TOKEN="token-api"
+export SABBER_INTIGRITI_TOKEN="token-pesquisador"
+export SABBER_BUGCROWD_TOKEN="usuario:segredo"
+
+# Sincronização pesada: catálogo, recon exaustivo e scan completo
+subdomainabber --db bounty.db sync
+
+# Uma plataforma específica
+subdomainabber --db bounty.db sync --platform hackerone
+
+# Atualiza o catálogo e expande somente escopos novos ou alterados
+subdomainabber --db bounty.db sync --incremental --scan=false
+
+# Revalida depois os hosts já analisados, sem repetir o sync pesado
+subdomainabber --db bounty.db verify
+```
+
+Sem `--platform`, são usadas todas as plataformas que possuem credenciais. HackerOne usa a Hacker API e os `structured_scopes`; Intigriti usa a Researcher API e os domínios versionados; Bugcrowd usa a API autenticada de programas, briefs, grupos e targets. Na Bugcrowd, a credencial tem o formato `usuario:segredo` exibido ao criar o token.
+
+O catálogo só envia ao recon e ao scan os ativos marcados como elegíveis ou pertencentes a grupos `in_scope`. Limites de automação positivos da Intigriti reduzem o limitador global quando forem mais restritivos. User-Agent e headers de identificação retornados nas regras do programa são aplicados por hostname às requisições HTTP. Se requisitos de programas diferentes entrarem em conflito no mesmo hostname, a CLI informa o conflito no `stderr`.
+
+Durante a sincronização, o `stderr` informa a etapa atual, cada raiz de recon e a quantidade final de alvos; resultados e achados continuam no `stdout`. Se alguma fonte falhar ou um limite truncar a descoberta, a execução termina como `PARTIAL`, registra os motivos no SQLite e preserva os vínculos obtidos em sincronizações anteriores. Uma coleta completa substitui esses vínculos de forma atômica. As chamadas oficiais respeitam os limites documentados de 50 requisições por minuto da HackerOne e 60 da Bugcrowd, além do limitador global configurado.
 
 Por padrão, a ferramenta aceita até 50 hosts em processamento simultâneo, tempo limite de rede de 5 segundos por operação e limite global de 10 operações por segundo. Quando o limite de taxa está ativo, a quantidade efetiva de hosts em processamento é limitada ao menor valor entre `--concurrency` e `--rl`; portanto, `--concurrency 50 --rl 10` executa dez hosts simultaneamente e evita que algum host fique indefinidamente sem oportunidade de execução. O tempo aguardando uma permissão do limitador não consome o tempo limite de rede.
 

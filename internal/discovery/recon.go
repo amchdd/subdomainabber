@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,6 +93,7 @@ type Options struct {
 	ScrapeLimit        int
 	Resume             *State
 	Progress           func(State) error
+	Headers            http.Header
 }
 
 type dnsLookup interface {
@@ -163,6 +165,11 @@ func (options Options) normalized() (Options, error) {
 	}
 	options.Words = cleanWords(options.Words)
 	return options, nil
+}
+
+func ValidateOptions(options Options) error {
+	_, err := options.normalized()
+	return err
 }
 
 func (engine *Engine) Discover(ctx context.Context, root string, options Options) (Result, error) {
@@ -708,7 +715,7 @@ func (engine *Engine) scrapeSeeds(ctx context.Context, root string, frontier []C
 			defer group.Done()
 			for name := range jobs {
 				for _, scheme := range []string{"https", "http"} {
-					found, err := ScrapePage(ctx, scheme+"://"+name, root, engine.client)
+					found, err := ScrapePageWithHeaders(ctx, scheme+"://"+name, root, options.Headers, engine.client)
 					if err != nil {
 						continue
 					}

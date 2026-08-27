@@ -46,6 +46,24 @@ func TestScrapePageUsesProvidedClient(t *testing.T) {
 	}
 }
 
+func TestScrapePageAppliesProgramHeaders(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("User-Agent") != "Researcher" || request.Header.Get("X-Research") != "yes" {
+			t.Fatalf("headers do programa ausentes: %#v", request.Header)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("api.example.com")),
+			Header:     make(http.Header),
+			Request:    request,
+		}, nil
+	})}
+	headers := http.Header{"User-Agent": {"Researcher"}, "X-Research": {"yes"}}
+	if _, err := ScrapePageWithHeaders(context.Background(), "https://source.example", "example.com", headers, client); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDefaultScraperClientDoesNotFollowExternalRedirect(t *testing.T) {
 	var externalCalls atomic.Int64
 	external := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

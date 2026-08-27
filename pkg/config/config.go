@@ -121,13 +121,17 @@ type Config struct {
 	FetchHeaders    bool   `yaml:"headers"`
 
 	// Tokens de APIs passivas e de nuvem
-	AlienVaultToken  string `yaml:"alienvault_token"`
-	CertSpotterToken string `yaml:"certspotter_token"`
-	AwsAccessKey     string `yaml:"aws_access_key"`
-	AwsSecretKey     string `yaml:"aws_secret_key"`
-	AwsSessionToken  string `yaml:"aws_session_token"`
-	AwsRegion        string `yaml:"aws_region"`
-	UrlscanToken     string `yaml:"urlscan_token"`
+	AlienVaultToken   string `yaml:"alienvault_token"`
+	CertSpotterToken  string `yaml:"certspotter_token"`
+	AwsAccessKey      string `yaml:"aws_access_key"`
+	AwsSecretKey      string `yaml:"aws_secret_key"`
+	AwsSessionToken   string `yaml:"aws_session_token"`
+	AwsRegion         string `yaml:"aws_region"`
+	UrlscanToken      string `yaml:"urlscan_token"`
+	HackerOneUsername string `yaml:"hackerone_username"`
+	HackerOneToken    string `yaml:"hackerone_token"`
+	IntigritiToken    string `yaml:"intigriti_token"`
+	BugcrowdToken     string `yaml:"bugcrowd_token"`
 
 	// Estas marcas distinguem um zero ausente de um zero escrito
 	// explicitamente no YAML. Assim, a validação rejeita valores inseguros em
@@ -367,6 +371,18 @@ func ApplyEnv(cfg *Config) error {
 	if v := os.Getenv("SABBER_URLSCAN_TOKEN"); v != "" {
 		cfg.UrlscanToken = v
 	}
+	if v := os.Getenv("SABBER_HACKERONE_USERNAME"); v != "" {
+		cfg.HackerOneUsername = v
+	}
+	if v := os.Getenv("SABBER_HACKERONE_TOKEN"); v != "" {
+		cfg.HackerOneToken = v
+	}
+	if v := os.Getenv("SABBER_INTIGRITI_TOKEN"); v != "" {
+		cfg.IntigritiToken = v
+	}
+	if v := os.Getenv("SABBER_BUGCROWD_TOKEN"); v != "" {
+		cfg.BugcrowdToken = v
+	}
 
 	return errors.Join(numericErrors...)
 }
@@ -510,6 +526,18 @@ func Merge(base, override *Config) *Config {
 	}
 	if override.UrlscanToken != "" {
 		merged.UrlscanToken = override.UrlscanToken
+	}
+	if override.HackerOneUsername != "" {
+		merged.HackerOneUsername = override.HackerOneUsername
+	}
+	if override.HackerOneToken != "" {
+		merged.HackerOneToken = override.HackerOneToken
+	}
+	if override.IntigritiToken != "" {
+		merged.IntigritiToken = override.IntigritiToken
+	}
+	if override.BugcrowdToken != "" {
+		merged.BugcrowdToken = override.BugcrowdToken
 	}
 	// Fatias: sobrescrever se houver elementos.
 	return &merged
