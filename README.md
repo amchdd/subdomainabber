@@ -143,6 +143,27 @@ subdomainabber scan -l hosts.txt --dns-consensus
 subdomainabber scan -l hosts.txt --fail-on-severity high
 ```
 
+### Recon nativo
+
+`recon` cria um inventário de subdomínios sem depender de executáveis como Subfinder ou Amass. Ele combina as fontes passivas já integradas, resolução A/AAAA/CNAME, MX, NS, SRV, referências encontradas em páginas, wordlist, alterações de labels e expansão recursiva. Cada nome mantém suas origens e o resultado de DNS no SQLite.
+
+```bash
+# Cobertura ampla com os limites padrão
+subdomainabber --db programa.db recon -d example.com
+
+# Coleta passiva, sem geração ativa de nomes
+subdomainabber --db programa.db recon -d example.com --mode passive
+
+# Wordlist própria e limites ajustados
+subdomainabber --db programa.db recon -d example.com \
+  --wordlist palavras.txt \
+  --max-rounds 6 \
+  --max-depth 7 \
+  --max-candidates 500000
+```
+
+O modo padrão do comando é `exhaustive`. `standard` limita a expansão a uma rodada e `passive` não gera candidatos. A detecção de wildcard é feita em cada nível da árvore DNS, e nomes que resolvem somente por IPv6 são preservados. O progresso é salvo ao fim de cada rodada; uma interrupção pode ser retomada pelo mesmo comando, pois `--resume` fica ativo por padrão. Use `--resume=false` para iniciar outra execução.
+
 Por padrão, a ferramenta aceita até 50 hosts em processamento simultâneo, tempo limite de rede de 5 segundos por operação e limite global de 10 operações por segundo. Quando o limite de taxa está ativo, a quantidade efetiva de hosts em processamento é limitada ao menor valor entre `--concurrency` e `--rl`; portanto, `--concurrency 50 --rl 10` executa dez hosts simultaneamente e evita que algum host fique indefinidamente sem oportunidade de execução. O tempo aguardando uma permissão do limitador não consome o tempo limite de rede.
 
 Os valores finais de concorrência, tempo limite e taxa precisam ser positivos. Nas opções de `scan`, zero apenas mantém o valor seguro da configuração ou o padrão; ele não desabilita o limitador. O modo `--daemon` aceita intervalos a partir de um minuto, e `enum --concurrency` aceita valores entre 1 e 1000.
