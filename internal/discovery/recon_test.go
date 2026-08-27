@@ -266,8 +266,22 @@ func TestScrapeSeedsSkipsUnresolvedNames(t *testing.T) {
 	})}}
 	seeds := engine.scrapeSeeds(context.Background(), "example.test", []Candidate{{
 		Name: "old.example.test", Root: "example.test", Resolved: false,
-	}}, Options{Concurrency: 1, ScrapeLimit: 10})
+	}}, Options{Concurrency: 1, ScrapeLimit: 10}, 10)
 	if len(seeds) != 0 || requests.Load() != 0 {
 		t.Fatalf("hostname não resolvido foi consultado: sementes=%d requisições=%d", len(seeds), requests.Load())
+	}
+}
+
+func TestPassiveSeedsDoNotSpendBudgetOnDuplicates(t *testing.T) {
+	engine := &Engine{providers: []Source{
+		reconSource{name: "fonte-a", names: []string{"a.example.test", "a.example.test", "b.example.test"}},
+		reconSource{name: "fonte-b", names: []string{"a.example.test", "c.example.test"}},
+	}}
+	seeds, runs := engine.passiveSeeds(context.Background(), "example.test", 2)
+	if len(seeds) != 3 {
+		t.Fatalf("proveniência ou orçamento incorretos: %+v", seeds)
+	}
+	if runs[0].Count != 2 || runs[0].Truncated || runs[1].Count != 2 || !runs[1].Truncated {
+		t.Fatalf("contagem das fontes incorreta: %+v", runs)
 	}
 }

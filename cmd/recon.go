@@ -153,7 +153,9 @@ func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, roo
 			if err != nil {
 				return discovery.Result{}, "", err
 			}
-			options.Resume = &discovery.State{Candidates: candidates, Checkpoint: checkpoint, Sources: sources}
+			if len(candidates) > 0 {
+				options.Resume = &discovery.State{Candidates: candidates, Checkpoint: checkpoint, Sources: sources}
+			}
 		}
 	}
 	if runID == "" {

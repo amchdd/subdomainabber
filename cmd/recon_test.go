@@ -80,6 +80,29 @@ func TestRunReconResumesLatestExecution(t *testing.T) {
 	}
 }
 
+func TestRunReconRestartsEmptyCheckpoint(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "empty.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runID, err := store.StartRecon("example.test", string(discovery.ModeExhaustive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &reconStub{}
+	_, resumedID, err := runRecon(context.Background(), stub, store, "example.test", discovery.Options{Mode: discovery.ModeExhaustive}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumedID != runID {
+		t.Fatalf("checkpoint vazio criou outra execução: %s", resumedID)
+	}
+	if stub.resume != nil {
+		t.Fatalf("checkpoint vazio pulou a coleta inicial: %+v", stub.resume)
+	}
+}
+
 func TestRunReconNormalizesRootBeforePersistence(t *testing.T) {
 	store, err := storage.New(filepath.Join(t.TempDir(), "normalize.db"))
 	if err != nil {

@@ -111,11 +111,6 @@ type seed struct {
 	keep   bool
 }
 
-type sourceHit struct {
-	name   string
-	source string
-}
-
 func (options Options) normalized() (Options, error) {
 	if options.Mode == "" {
 		options.Mode = ModeStandard
@@ -221,10 +216,14 @@ func (engine *Engine) Discover(ctx context.Context, root string, options Options
 		budget := options.MaxCandidates - len(candidates)
 		var generated []seed
 		if options.Mode != ModePassive && engine.client != nil && len(candidates) < options.ScrapeLimit {
-			generated = engine.scrapeSeeds(ctx, root, frontier, options)
+			generated = engine.scrapeSeeds(ctx, root, frontier, options, budget)
+			generated = unseenSeeds(generated, attempted, budget)
 		}
-		generated = append(generated, generateSeeds(root, frontier, candidates, attempted, words, options, budget)...)
-		generated = unseenSeeds(generated, attempted, budget)
+		remaining := budget - len(generated)
+		if remaining > 0 {
+			seeds := generateSeeds(root, frontier, candidates, attempted, words, options, remaining)
+			generated = append(generated, unseenSeeds(seeds, attempted, remaining)...)
+		}
 		resolved := engine.resolveSeeds(ctx, root, generated, options, wildcards)
 		frontier = mergeCandidates(candidates, resolved, options.MaxCandidates)
 		engine.addCNAMESeeds(ctx, root, candidates, &frontier, options, wildcards)
@@ -293,12 +292,6 @@ func reportProgress(callback func(State) error, catalog map[string]Candidate, ro
 	return nil
 }
 
-type sourceBatch struct {
-	index int
-	run   SourceRun
-	hits  []sourceHit
-}
-
 func (engine *Engine) passiveSeeds(ctx context.Context, root string, limit int) ([]seed, []SourceRun) {
 	if len(engine.providers) == 0 {
 		return nil, nil
@@ -306,63 +299,53 @@ func (engine *Engine) passiveSeeds(ctx context.Context, root string, limit int) 
 	if limit < 0 {
 		limit = 0
 	}
-	batches := make(chan sourceBatch, len(engine.providers))
-	var group sync.WaitGroup
-	for index, provider := range engine.providers {
-		group.Add(1)
-		go func(index int, provider Source) {
-			defer group.Done()
-			names := make(chan string, 256)
-			errors := make(chan error, 1)
-			go func() {
-				errors <- provider.Enumerate(ctx, root, names)
-				close(names)
-			}()
-			batch := sourceBatch{index: index, run: SourceRun{Name: provider.Name()}}
-			for name := range names {
-				if normalized := normalizeName(name); belongsToDomain(normalized, root) {
-					batch.run.Count++
-					if len(batch.hits) < limit {
-						batch.hits = append(batch.hits, sourceHit{name: normalized, source: provider.Name()})
-					} else {
-						batch.run.Truncated = true
-					}
-				}
-			}
-			if err := <-errors; err != nil {
-				batch.run.Error = err.Error()
-			}
-			batches <- batch
-		}(index, provider)
+	type stream struct {
+		provider Source
+		names    chan string
+		errors   chan error
 	}
-	go func() {
-		group.Wait()
-		close(batches)
-	}()
+	streams := make([]stream, 0, len(engine.providers))
+	for _, provider := range engine.providers {
+		current := stream{provider: provider, names: make(chan string, 256), errors: make(chan error, 1)}
+		streams = append(streams, current)
+		go func(current stream) {
+			current.errors <- current.provider.Enumerate(ctx, root, current.names)
+			close(current.names)
+		}(current)
+	}
 
-	collected := make([]sourceBatch, len(engine.providers))
-	for batch := range batches {
-		collected[batch.index] = batch
-	}
-	runs := make([]SourceRun, len(engine.providers))
+	runs := make([]SourceRun, 0, len(streams))
+	selected := make(map[string]struct{}, limit)
 	var seeds []seed
-	for index, batch := range collected {
-		remaining := limit - len(seeds)
-		if remaining < len(batch.hits) {
-			batch.run.Truncated = true
-			if remaining < 0 {
-				remaining = 0
+	for _, current := range streams {
+		run := SourceRun{Name: current.provider.Name()}
+		seen := make(map[string]struct{})
+		for name := range current.names {
+			name = normalizeName(name)
+			if !belongsToDomain(name, root) {
+				continue
 			}
-			batch.hits = batch.hits[:remaining]
-		}
-		runs[index] = batch.run
-		for _, hit := range batch.hits {
+			if _, found := seen[name]; found {
+				continue
+			}
+			seen[name] = struct{}{}
+			run.Count++
+			_, found := selected[name]
+			if !found && len(selected) >= limit {
+				run.Truncated = true
+				continue
+			}
+			selected[name] = struct{}{}
 			seeds = append(seeds, seed{
-				name:   hit.name,
+				name:   name,
 				keep:   true,
-				origin: Origin{Source: hit.source, Method: "passive", Depth: nameDepth(hit.name, root)},
+				origin: Origin{Source: current.provider.Name(), Method: "passive", Depth: nameDepth(name, root)},
 			})
 		}
+		if err := <-current.errors; err != nil {
+			run.Error = err.Error()
+		}
+		runs = append(runs, run)
 	}
 	return seeds, runs
 }
@@ -712,8 +695,8 @@ func numericNames(name string) []string {
 	return names
 }
 
-func (engine *Engine) scrapeSeeds(ctx context.Context, root string, frontier []Candidate, options Options) []seed {
-	if engine.client == nil || len(frontier) == 0 {
+func (engine *Engine) scrapeSeeds(ctx context.Context, root string, frontier []Candidate, options Options, limit int) []seed {
+	if engine.client == nil || len(frontier) == 0 || limit <= 0 {
 		return nil
 	}
 	jobs := make(chan string)
@@ -765,8 +748,21 @@ func (engine *Engine) scrapeSeeds(ctx context.Context, root string, frontier []C
 		close(results)
 	}()
 
-	var seeds []seed
+	seeds := make([]seed, 0, limit)
+	seen := make(map[string]struct{}, limit)
 	for item := range results {
+		if len(seeds) >= limit {
+			continue
+		}
+		name := normalizeName(item.name)
+		if name == "" {
+			continue
+		}
+		if _, found := seen[name]; found {
+			continue
+		}
+		seen[name] = struct{}{}
+		item.name = name
 		seeds = append(seeds, item)
 	}
 	return seeds
