@@ -164,6 +164,8 @@ subdomainabber --db programa.db recon -d example.com \
 
 O modo padrão do comando é `exhaustive`. `standard` limita a expansão a uma rodada e `passive` não gera candidatos. A detecção de wildcard é feita em cada nível da árvore DNS, e nomes que resolvem somente por IPv6 são preservados. O progresso é salvo ao fim de cada rodada; uma interrupção pode ser retomada pelo mesmo comando, pois `--resume` fica ativo por padrão. Use `--resume=false` para iniciar outra execução.
 
+A saída textual contém somente subdomínios que resolveram por A, AAAA ou CNAME e pode ser usada diretamente em pipes. Nomes históricos que não resolvem continuam preservados no inventário e no JSON; use `--show-unresolved` para incluí-los na saída textual. Quando uma fonte falha ou algum limite é atingido, o comando marca o resultado como parcial, informa o motivo no `stderr` e mantém ativos os nomes do catálogo anterior.
+
 Por padrão, a ferramenta aceita até 50 hosts em processamento simultâneo, tempo limite de rede de 5 segundos por operação e limite global de 10 operações por segundo. Quando o limite de taxa está ativo, a quantidade efetiva de hosts em processamento é limitada ao menor valor entre `--concurrency` e `--rl`; portanto, `--concurrency 50 --rl 10` executa dez hosts simultaneamente e evita que algum host fique indefinidamente sem oportunidade de execução. O tempo aguardando uma permissão do limitador não consome o tempo limite de rede.
 
 Os valores finais de concorrência, tempo limite e taxa precisam ser positivos. Nas opções de `scan`, zero apenas mantém o valor seguro da configuração ou o padrão; ele não desabilita o limitador. O modo `--daemon` aceita intervalos a partir de um minuto, e `enum --concurrency` aceita valores entre 1 e 1000.

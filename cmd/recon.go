@@ -10,6 +10,7 @@ import (
 
 	"github.com/amchdd/subdomainabber/internal/discovery"
 	"github.com/amchdd/subdomainabber/internal/dns"
+	"github.com/amchdd/subdomainabber/internal/domainutil"
 	"github.com/amchdd/subdomainabber/internal/netclient"
 	"github.com/amchdd/subdomainabber/internal/storage"
 	"github.com/amchdd/subdomainabber/pkg/config"
@@ -28,6 +29,7 @@ var (
 	reconRecursiveThreshold int
 	reconResume             bool
 	reconJSON               bool
+	reconShowUnresolved     bool
 )
 
 type reconRunner interface {
@@ -73,14 +75,25 @@ var reconCmd = &cobra.Command{
 			}
 			return err
 		}
+		if result.Partial && !cfg.Silent {
+			fmt.Fprintln(os.Stderr, "recon parcial; o catálogo anterior não será desativado")
+			for _, reason := range result.Reasons {
+				fmt.Fprintf(os.Stderr, "- %s\n", reason)
+			}
+		}
 		if reconJSON || cfg.JSONOutput {
 			return json.NewEncoder(os.Stdout).Encode(result)
 		}
-		for _, candidate := range result.Names {
-			fmt.Println(candidate.Name)
+		names := result.Targets()
+		if reconShowUnresolved {
+			names = result.Inventory()
+		}
+		for _, name := range names {
+			fmt.Println(name)
 		}
 		if cfg.Verbose && !cfg.Silent {
-			fmt.Fprintf(os.Stderr, "recon %s concluído: %d nomes em %d rodada(s)\n", runID, len(result.Names), result.Rounds)
+			unresolved := len(result.Inventory()) - len(result.Targets())
+			fmt.Fprintf(os.Stderr, "recon %s concluído: %d alvos resolvidos, %d nomes não resolvidos em %d rodada(s)\n", runID, len(result.Targets()), unresolved, result.Rounds)
 			for _, source := range result.Sources {
 				if source.Error != "" {
 					fmt.Fprintf(os.Stderr, "fonte %s: %s\n", source.Name, source.Error)
@@ -116,6 +129,10 @@ func newReconEngine(cfg *config.Config) (*discovery.Engine, error) {
 }
 
 func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, root string, options discovery.Options, resume bool) (discovery.Result, string, error) {
+	root, err := domainutil.NormalizeHostname(root)
+	if err != nil {
+		return discovery.Result{}, "", fmt.Errorf("domínio de recon inválido: %w", err)
+	}
 	var runID string
 	if resume {
 		latest, err := store.LatestRecon(ctx, root)
@@ -132,7 +149,11 @@ func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, roo
 			if err != nil {
 				return discovery.Result{}, "", err
 			}
-			options.Resume = &discovery.State{Candidates: candidates, Checkpoint: checkpoint}
+			sources, err := store.ReconSources(ctx, runID)
+			if err != nil {
+				return discovery.Result{}, "", err
+			}
+			options.Resume = &discovery.State{Candidates: candidates, Checkpoint: checkpoint, Sources: sources}
 		}
 	}
 	if runID == "" {
@@ -152,19 +173,22 @@ func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, roo
 		if err := store.SaveReconCandidates(runID, state.Candidates); err != nil {
 			return err
 		}
-		return store.SaveReconCheckpoint(runID, state.Checkpoint)
+		if err := store.SaveReconCheckpoint(runID, state.Checkpoint); err != nil {
+			return err
+		}
+		return store.SaveReconSources(runID, state.Sources)
 	}
 	result, err := runner.Discover(ctx, root, options)
 	if err != nil {
 		if ctx.Err() == nil {
-			_ = store.FinishRecon(runID, "FAILED", 0)
+			_ = store.FinishRecon(runID, "FAILED", 0, true)
 		}
 		return discovery.Result{}, runID, err
 	}
 	if err := store.SaveReconCandidates(runID, result.Names); err != nil {
 		return discovery.Result{}, runID, err
 	}
-	if err := store.FinishRecon(runID, "COMPLETED", len(result.Names)); err != nil {
+	if err := store.FinishRecon(runID, "COMPLETED", len(result.Names), result.Partial); err != nil {
 		return discovery.Result{}, runID, err
 	}
 	return result, runID, nil
@@ -182,4 +206,5 @@ func init() {
 	reconCmd.Flags().IntVar(&reconRecursiveThreshold, "recursive-threshold", 2, "Densidade mínima para expansão recursiva")
 	reconCmd.Flags().BoolVar(&reconResume, "resume", true, "Retomar a última execução interrompida")
 	reconCmd.Flags().BoolVar(&reconJSON, "json", false, "Exibir resultado em JSON")
+	reconCmd.Flags().BoolVar(&reconShowUnresolved, "show-unresolved", false, "Incluir nomes observados que não resolvem no momento")
 }

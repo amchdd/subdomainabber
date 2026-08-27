@@ -3,6 +3,8 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -201,5 +203,71 @@ func TestDiscoverFiltersHierarchicalWildcard(t *testing.T) {
 	}
 	if _, ok := result.Find("wild.api.example.test"); ok {
 		t.Fatalf("resposta de wildcard entrou no catálogo: %+v", result.Names)
+	}
+}
+
+func TestResultTargetsKeepsOnlyResolvedSubdomains(t *testing.T) {
+	result := Result{Root: "example.test", Names: []Candidate{
+		{Name: "example.test", Resolved: true},
+		{Name: "api.example.test", Resolved: true},
+		{Name: "old.example.test", Resolved: false},
+		{Name: "wild.example.test", Resolved: true, Wildcard: true},
+	}}
+	targets := result.Targets()
+	if len(targets) != 1 || targets[0] != "api.example.test" {
+		t.Fatalf("alvos acionáveis incorretos: %v", targets)
+	}
+	inventory := result.Inventory()
+	if len(inventory) != 2 || inventory[0] != "api.example.test" || inventory[1] != "old.example.test" {
+		t.Fatalf("inventário incompleto: %v", inventory)
+	}
+}
+
+func TestDiscoverMarksTruncatedPassiveInventoryAsPartial(t *testing.T) {
+	names := []string{"a.example.test", "b.example.test", "c.example.test", "d.example.test"}
+	records := map[string]DNSRecord{"example.test": {A: []string{"192.0.2.1"}}}
+	for index, name := range names {
+		records[name] = DNSRecord{A: []string{fmt.Sprintf("192.0.2.%d", index+2)}}
+	}
+	engine := &Engine{
+		resolver:  &reconResolver{records: records},
+		providers: []Source{reconSource{name: "inventário", names: names}},
+	}
+	result, err := engine.Discover(context.Background(), "example.test", Options{
+		Mode: ModePassive, Concurrency: 2, MaxCandidates: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Partial || len(result.Sources) != 1 || !result.Sources[0].Truncated || result.Sources[0].Count != 4 {
+		t.Fatalf("truncamento passivo não foi sinalizado: %+v", result)
+	}
+	if len(result.Names) != 3 {
+		t.Fatalf("limite global ignorado: %d", len(result.Names))
+	}
+}
+
+func TestGenerateSeedsSkipsAttemptedBeforeLimit(t *testing.T) {
+	attempted := map[string]struct{}{"a.example.test": {}}
+	seeds := generateSeeds(
+		"example.test", nil, map[string]Candidate{}, attempted,
+		[]string{"a", "b", "c"}, Options{MaxDepth: 3}, 2,
+	)
+	if len(seeds) != 2 || seeds[0].name != "b.example.test" || seeds[1].name != "c.example.test" {
+		t.Fatalf("orçamento foi consumido por nomes repetidos: %+v", seeds)
+	}
+}
+
+func TestScrapeSeedsSkipsUnresolvedNames(t *testing.T) {
+	var requests atomic.Int32
+	engine := &Engine{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return nil, errors.New("requisição inesperada")
+	})}}
+	seeds := engine.scrapeSeeds(context.Background(), "example.test", []Candidate{{
+		Name: "old.example.test", Root: "example.test", Resolved: false,
+	}}, Options{Concurrency: 1, ScrapeLimit: 10})
+	if len(seeds) != 0 || requests.Load() != 0 {
+		t.Fatalf("hostname não resolvido foi consultado: sementes=%d requisições=%d", len(seeds), requests.Load())
 	}
 }

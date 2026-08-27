@@ -31,11 +31,7 @@ type Origin = core.ReconOrigin
 type DNSRecord = core.ReconDNSRecord
 type Checkpoint = core.ReconCheckpoint
 
-type SourceRun struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
-	Error string `json:"error,omitempty"`
-}
+type SourceRun = core.ReconSourceRun
 
 type Result struct {
 	Root       string      `json:"root"`
@@ -45,11 +41,14 @@ type Result struct {
 	Rounds     int         `json:"rounds"`
 	StartedAt  time.Time   `json:"started_at"`
 	FinishedAt time.Time   `json:"finished_at"`
+	Partial    bool        `json:"partial,omitempty"`
+	Reasons    []string    `json:"partial_reasons,omitempty"`
 }
 
 type State struct {
 	Candidates []Candidate `json:"candidates"`
 	Checkpoint Checkpoint  `json:"checkpoint"`
+	Sources    []SourceRun `json:"sources,omitempty"`
 }
 
 func (result Result) Find(name string) (Candidate, bool) {
@@ -65,11 +64,21 @@ func (result Result) Find(name string) (Candidate, bool) {
 func (result Result) Targets() []string {
 	targets := make([]string, 0, len(result.Names))
 	for _, candidate := range result.Names {
-		if !candidate.Wildcard {
+		if candidate.Name != result.Root && candidate.Resolved && !candidate.Wildcard {
 			targets = append(targets, candidate.Name)
 		}
 	}
 	return targets
+}
+
+func (result Result) Inventory() []string {
+	names := make([]string, 0, len(result.Names))
+	for _, candidate := range result.Names {
+		if candidate.Name != result.Root && !candidate.Wildcard {
+			names = append(names, candidate.Name)
+		}
+	}
+	return names
 }
 
 type Options struct {
@@ -179,19 +188,20 @@ func (engine *Engine) Discover(ctx context.Context, root string, options Options
 	if options.Resume != nil {
 		mergeCandidates(candidates, options.Resume.Candidates, options.MaxCandidates)
 		frontier = restoreFrontier(candidates, options.Resume.Checkpoint.Frontier)
+		result.Sources = append([]SourceRun(nil), options.Resume.Sources...)
 		result.Rounds = options.Resume.Checkpoint.Round
 		startRound = result.Rounds + 1
 	} else {
-		seeds, sources := engine.passiveSeeds(ctx, root)
+		seeds, sources := engine.passiveSeeds(ctx, root, options.MaxCandidates-1)
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
 		result.Sources = sources
-		seeds = append(seeds, seed{name: root, keep: true, origin: Origin{Source: "escopo", Method: "seed"}})
+		seeds = append([]seed{{name: root, keep: true, origin: Origin{Source: "escopo", Method: "seed"}}}, seeds...)
 		initial := engine.resolveSeeds(ctx, root, seeds, options, wildcards)
 		frontier = mergeCandidates(candidates, initial, options.MaxCandidates)
 		engine.addDNSSeeds(ctx, root, candidates, &frontier, options, wildcards)
-		if err := reportProgress(options.Progress, candidates, 0, frontier); err != nil {
+		if err := reportProgress(options.Progress, candidates, 0, frontier, result.Sources); err != nil {
 			return Result{}, err
 		}
 	}
@@ -208,16 +218,18 @@ func (engine *Engine) Discover(ctx context.Context, root string, options Options
 		if options.Mode == ModeExhaustive {
 			words = cleanWords(append(words, learnedWords(candidates)...))
 		}
-		generated := generateSeeds(root, frontier, candidates, words, options)
+		budget := options.MaxCandidates - len(candidates)
+		var generated []seed
 		if options.Mode != ModePassive && engine.client != nil && len(candidates) < options.ScrapeLimit {
-			generated = append(generated, engine.scrapeSeeds(ctx, root, frontier, options)...)
+			generated = engine.scrapeSeeds(ctx, root, frontier, options)
 		}
-		generated = unseenSeeds(generated, attempted)
+		generated = append(generated, generateSeeds(root, frontier, candidates, attempted, words, options, budget)...)
+		generated = unseenSeeds(generated, attempted, budget)
 		resolved := engine.resolveSeeds(ctx, root, generated, options, wildcards)
 		frontier = mergeCandidates(candidates, resolved, options.MaxCandidates)
 		engine.addCNAMESeeds(ctx, root, candidates, &frontier, options, wildcards)
 		result.Rounds = round
-		if err := reportProgress(options.Progress, candidates, round, frontier); err != nil {
+		if err := reportProgress(options.Progress, candidates, round, frontier, result.Sources); err != nil {
 			return Result{}, err
 		}
 	}
@@ -226,6 +238,8 @@ func (engine *Engine) Discover(ctx context.Context, root string, options Options
 	}
 
 	result.Names = sortedCandidates(candidates)
+	result.Reasons = partialReasons(result.Sources, len(result.Names), options.MaxCandidates)
+	result.Partial = len(result.Reasons) > 0
 	result.FinishedAt = time.Now().UTC()
 	return result, nil
 }
@@ -240,9 +254,12 @@ func restoreFrontier(catalog map[string]Candidate, names []string) []Candidate {
 	return frontier
 }
 
-func unseenSeeds(seeds []seed, attempted map[string]struct{}) []seed {
+func unseenSeeds(seeds []seed, attempted map[string]struct{}, limit int) []seed {
 	result := make([]seed, 0, len(seeds))
 	for _, item := range seeds {
+		if len(result) >= limit {
+			break
+		}
 		name := normalizeName(item.name)
 		if name == "" {
 			continue
@@ -256,7 +273,7 @@ func unseenSeeds(seeds []seed, attempted map[string]struct{}) []seed {
 	return result
 }
 
-func reportProgress(callback func(State) error, catalog map[string]Candidate, round int, frontier []Candidate) error {
+func reportProgress(callback func(State) error, catalog map[string]Candidate, round int, frontier []Candidate, sources []SourceRun) error {
 	if callback == nil {
 		return nil
 	}
@@ -268,6 +285,7 @@ func reportProgress(callback func(State) error, catalog map[string]Candidate, ro
 	state := State{
 		Candidates: sortedCandidates(catalog),
 		Checkpoint: Checkpoint{Round: round, Frontier: names},
+		Sources:    append([]SourceRun(nil), sources...),
 	}
 	if err := callback(state); err != nil {
 		return fmt.Errorf("persistindo progresso do recon: %w", err)
@@ -281,9 +299,12 @@ type sourceBatch struct {
 	hits  []sourceHit
 }
 
-func (engine *Engine) passiveSeeds(ctx context.Context, root string) ([]seed, []SourceRun) {
+func (engine *Engine) passiveSeeds(ctx context.Context, root string, limit int) ([]seed, []SourceRun) {
 	if len(engine.providers) == 0 {
 		return nil, nil
+	}
+	if limit < 0 {
+		limit = 0
 	}
 	batches := make(chan sourceBatch, len(engine.providers))
 	var group sync.WaitGroup
@@ -300,13 +321,17 @@ func (engine *Engine) passiveSeeds(ctx context.Context, root string) ([]seed, []
 			batch := sourceBatch{index: index, run: SourceRun{Name: provider.Name()}}
 			for name := range names {
 				if normalized := normalizeName(name); belongsToDomain(normalized, root) {
-					batch.hits = append(batch.hits, sourceHit{name: normalized, source: provider.Name()})
+					batch.run.Count++
+					if len(batch.hits) < limit {
+						batch.hits = append(batch.hits, sourceHit{name: normalized, source: provider.Name()})
+					} else {
+						batch.run.Truncated = true
+					}
 				}
 			}
 			if err := <-errors; err != nil {
 				batch.run.Error = err.Error()
 			}
-			batch.run.Count = len(batch.hits)
 			batches <- batch
 		}(index, provider)
 	}
@@ -315,10 +340,22 @@ func (engine *Engine) passiveSeeds(ctx context.Context, root string) ([]seed, []
 		close(batches)
 	}()
 
+	collected := make([]sourceBatch, len(engine.providers))
+	for batch := range batches {
+		collected[batch.index] = batch
+	}
 	runs := make([]SourceRun, len(engine.providers))
 	var seeds []seed
-	for batch := range batches {
-		runs[batch.index] = batch.run
+	for index, batch := range collected {
+		remaining := limit - len(seeds)
+		if remaining < len(batch.hits) {
+			batch.run.Truncated = true
+			if remaining < 0 {
+				remaining = 0
+			}
+			batch.hits = batch.hits[:remaining]
+		}
+		runs[index] = batch.run
 		for _, hit := range batch.hits {
 			seeds = append(seeds, seed{
 				name:   hit.name,
@@ -328,6 +365,22 @@ func (engine *Engine) passiveSeeds(ctx context.Context, root string) ([]seed, []
 		}
 	}
 	return seeds, runs
+}
+
+func partialReasons(sources []SourceRun, count, limit int) []string {
+	var reasons []string
+	for _, source := range sources {
+		if source.Error != "" {
+			reasons = append(reasons, "falha na fonte "+source.Name)
+		}
+		if source.Truncated {
+			reasons = append(reasons, "limite atingido na fonte "+source.Name)
+		}
+	}
+	if limit > 0 && count >= limit {
+		reasons = append(reasons, fmt.Sprintf("limite global de %d nomes atingido", limit))
+	}
+	return reasons
 }
 
 func (engine *Engine) resolveSeeds(ctx context.Context, root string, seeds []seed, options Options, wildcards map[string]dns.WildcardSignature) []Candidate {
@@ -387,6 +440,7 @@ func (engine *Engine) resolveSeeds(ctx context.Context, root string, seeds []see
 	for candidate := range results {
 		candidates = append(candidates, candidate)
 	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Name < candidates[j].Name })
 	return candidates
 }
 
@@ -555,15 +609,24 @@ func (engine *Engine) addCNAMESeeds(ctx context.Context, root string, catalog ma
 	*frontier = append(*frontier, mergeCandidates(catalog, resolved, options.MaxCandidates)...)
 }
 
-func generateSeeds(root string, frontier []Candidate, catalog map[string]Candidate, words []string, options Options) []seed {
+func generateSeeds(root string, frontier []Candidate, catalog map[string]Candidate, attempted map[string]struct{}, words []string, options Options, limit int) []seed {
+	if limit <= 0 {
+		return nil
+	}
 	seen := make(map[string]struct{})
 	seeds := make([]seed, 0, len(words))
 	add := func(name, method, parent string) {
+		if len(seeds) >= limit {
+			return
+		}
 		name = normalizeName(name)
 		if name == "" || !belongsToDomain(name, root) || nameDepth(name, root) > options.MaxDepth {
 			return
 		}
 		if _, found := catalog[name]; found {
+			return
+		}
+		if _, found := attempted[name]; found {
 			return
 		}
 		if _, found := seen[name]; found {
@@ -578,18 +641,30 @@ func generateSeeds(root string, frontier []Candidate, catalog map[string]Candida
 
 	for _, word := range words {
 		add(word+"."+root, "wordlist", root)
+		if len(seeds) >= limit {
+			return seeds
+		}
 	}
 	for _, candidate := range frontier {
+		if len(seeds) >= limit {
+			return seeds
+		}
 		if candidate.Name == root || !shouldRecurse(candidate, catalog, root, options.RecursiveThreshold) {
 			continue
 		}
 		for _, word := range words {
 			add(word+"."+candidate.Name, "recursão", candidate.Name)
+			if len(seeds) >= limit {
+				return seeds
+			}
 		}
 		label, parent := firstLabel(candidate.Name)
 		for _, word := range words {
 			add(label+"-"+word+"."+parent, "alteração", candidate.Name)
 			add(word+"-"+label+"."+parent, "alteração", candidate.Name)
+			if len(seeds) >= limit {
+				return seeds
+			}
 		}
 		for _, name := range numericNames(candidate.Name) {
 			add(name, "sequência", candidate.Name)
@@ -675,6 +750,9 @@ func (engine *Engine) scrapeSeeds(ctx context.Context, root string, frontier []C
 			limit = options.ScrapeLimit
 		}
 		for _, candidate := range frontier[:limit] {
+			if !candidate.Resolved {
+				continue
+			}
 			select {
 			case <-ctx.Done():
 				return

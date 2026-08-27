@@ -44,3 +44,10 @@ type ReconCheckpoint struct {
 	Round    int      `json:"round"`
 	Frontier []string `json:"frontier,omitempty"`
 }
+
+type ReconSourceRun struct {
+	Name      string `json:"name"`
+	Count     int    `json:"count"`
+	Error     string `json:"error,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
