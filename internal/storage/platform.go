@@ -197,13 +197,14 @@ func (store *Store) savePlatformAsset(tx *sql.Tx, runID, name, programID string,
 	if asset.ID == "" {
 		asset.ID = assetID(asset)
 	}
-	hash := assetID(asset)
+	hash := scopeID(asset)
 	var previous string
 	err := tx.QueryRow(`SELECT scope_hash FROM platform_assets WHERE platform = ? AND program_id = ? AND id = ?`, name, programID, asset.ID).Scan(&previous)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	changed := full || previous != hash
+	scopeChanged := errors.Is(err, sql.ErrNoRows) || previous != hash
+	refresh := full || scopeChanged
 	_, err = tx.Exec(`
 		INSERT INTO platform_assets (
 			platform, program_id, id, value, type, kind, host, recon_root,
@@ -221,7 +222,7 @@ func (store *Store) savePlatformAsset(tx *sql.Tx, runID, name, programID string,
 	if err != nil {
 		return fmt.Errorf("salvando ativo %s: %w", asset.Value, err)
 	}
-	if changed {
+	if scopeChanged {
 		if _, err := tx.Exec(`DELETE FROM platform_target_links WHERE platform = ? AND program_id = ? AND asset_id = ?`, name, programID, asset.ID); err != nil {
 			return err
 		}
@@ -231,7 +232,7 @@ func (store *Store) savePlatformAsset(tx *sql.Tx, runID, name, programID string,
 			return err
 		}
 	}
-	if asset.Eligible && asset.Kind == platform.KindWildcard && asset.ReconRoot != "" && changed {
+	if asset.Eligible && asset.Kind == platform.KindWildcard && asset.ReconRoot != "" && refresh {
 		_, err = tx.Exec(`
 			INSERT OR IGNORE INTO platform_sync_queue (run_id, platform, program_id, asset_id, recon_root)
 			VALUES (?, ?, ?, ?, ?)
@@ -275,7 +276,7 @@ func (store *Store) PendingPlatformAssets(ctx context.Context, runID string) ([]
 	return works, rows.Err()
 }
 
-func (store *Store) SavePlatformTargets(work PlatformWork, targets []string) error {
+func (store *Store) SavePlatformTargets(work PlatformWork, targets []string, partial bool) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	root, err := domainutil.NormalizeHostname(work.Root)
@@ -287,6 +288,11 @@ func (store *Store) SavePlatformTargets(work PlatformWork, targets []string) err
 		return err
 	}
 	defer tx.Rollback()
+	if !partial {
+		if _, err := tx.Exec(`DELETE FROM platform_target_links WHERE platform = ? AND program_id = ? AND asset_id = ?`, work.Platform, work.ProgramID, work.AssetID); err != nil {
+			return err
+		}
+	}
 	for _, target := range targets {
 		target, err = domainutil.NormalizeHostname(target)
 		if err != nil || !strings.HasSuffix(target, "."+root) {
@@ -403,6 +409,13 @@ func (store *Store) SetPlatformSyncStage(runID, stage, scanRunID string) error {
 	return err
 }
 
+func (store *Store) SetPlatformSyncNote(runID, note string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	_, err := store.db.Exec(`UPDATE platform_sync_runs SET last_error = ? WHERE id = ?`, note, runID)
+	return err
+}
+
 func (store *Store) FinishPlatformSync(runID, status string, count int, lastError string) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -443,6 +456,18 @@ func (store *Store) LatestPlatformSync(ctx context.Context) (*PlatformSync, erro
 
 func assetID(asset platform.Asset) string {
 	data, _ := json.Marshal(asset)
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:16])
+}
+
+func scopeID(asset platform.Asset) string {
+	data, _ := json.Marshal(struct {
+		Value     string
+		Kind      platform.AssetKind
+		Host      string
+		ReconRoot string
+		Eligible  bool
+	}{asset.Value, asset.Kind, asset.Host, asset.ReconRoot, asset.Eligible})
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:16])
 }

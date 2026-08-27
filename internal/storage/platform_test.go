@@ -3,6 +3,7 @@ package storage_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/amchdd/subdomainabber/internal/platform"
@@ -37,7 +38,7 @@ func TestPlatformCatalogPersistsQueueAndTargetLinks(t *testing.T) {
 		if work.AssetID == "a1" {
 			if err := store.SavePlatformTargets(work, []string{
 				"example.com", "dev.example.com", "notexample.com", "invalid host",
-			}); err != nil {
+			}, false); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -54,6 +55,69 @@ func TestPlatformCatalogPersistsQueueAndTargetLinks(t *testing.T) {
 	}
 	if err := store.FinishPlatformSync(runID, "COMPLETED", len(targets), ""); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPlatformTargetsPreservePartialReconAndReplaceCompleteResult(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "partial.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	program := platform.Program{Platform: "hackerone", ID: "p1", Assets: []platform.Asset{{
+		ID: "a1", Value: "*.example.com", Kind: platform.KindWildcard, ReconRoot: "example.com", Eligible: true,
+	}}}
+
+	first, _ := store.StartPlatformSync([]string{"hackerone"}, true)
+	if err := store.SavePlatformPrograms(first, "hackerone", []platform.Program{program}); err != nil {
+		t.Fatal(err)
+	}
+	work := pendingPlatformWork(t, store, first)
+	if err := store.SavePlatformTargets(work, []string{"old.example.com"}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	second, _ := store.StartPlatformSync([]string{"hackerone"}, true)
+	if err := store.SavePlatformPrograms(second, "hackerone", []platform.Program{program}); err != nil {
+		t.Fatal(err)
+	}
+	work = pendingPlatformWork(t, store, second)
+	if err := store.SavePlatformTargets(work, []string{"new.example.com"}, true); err != nil {
+		t.Fatal(err)
+	}
+	assertPlatformTargets(t, store, []string{"new.example.com", "old.example.com"})
+
+	third, _ := store.StartPlatformSync([]string{"hackerone"}, true)
+	if err := store.SavePlatformPrograms(third, "hackerone", []platform.Program{program}); err != nil {
+		t.Fatal(err)
+	}
+	work = pendingPlatformWork(t, store, third)
+	if err := store.SavePlatformTargets(work, []string{"new.example.com"}, false); err != nil {
+		t.Fatal(err)
+	}
+	assertPlatformTargets(t, store, []string{"new.example.com"})
+}
+
+func pendingPlatformWork(t *testing.T, store *storage.Store, runID string) storage.PlatformWork {
+	t.Helper()
+	works, err := store.PendingPlatformAssets(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(works) != 1 {
+		t.Fatalf("fila inesperada: %+v", works)
+	}
+	return works[0]
+}
+
+func assertPlatformTargets(t *testing.T, store *storage.Store, expected []string) {
+	t.Helper()
+	targets, err := store.PlatformTargets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(targets, ",") != strings.Join(expected, ",") {
+		t.Fatalf("alvos inesperados: %v", targets)
 	}
 }
 

@@ -167,6 +167,11 @@ func (options Options) normalized() (Options, error) {
 	return options, nil
 }
 
+func ValidateOptions(options Options) error {
+	_, err := options.normalized()
+	return err
+}
+
 func (engine *Engine) Discover(ctx context.Context, root string, options Options) (Result, error) {
 	started := time.Now().UTC()
 	root, err := domainutil.NormalizeHostname(root)

@@ -41,3 +41,38 @@ func TestAPIClientRejectsCrossOriginPagination(t *testing.T) {
 		t.Fatal("paginação externa foi aceita")
 	}
 }
+
+func TestAPIClientPreservesBasePath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/external/researcher/v1/programs" {
+			t.Fatalf("prefixo da API perdido: %s", request.URL.Path)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	client := newAPIClient(server.Client(), server.URL+"/external/researcher", nil)
+	var output any
+	if err := client.get(context.Background(), "/v1/programs", &output); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVisitPageRejectsCycle(t *testing.T) {
+	seen := make(map[string]struct{})
+	if err := visitPage(seen, "/programs?page=1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := visitPage(seen, "/programs?page=1"); err == nil {
+		t.Fatal("ciclo de paginação foi aceito")
+	}
+}
+
+func TestAPIPacerOnlyAppliesToOfficialOrigin(t *testing.T) {
+	if apiPacer("https://api.hackerone.com", "api.hackerone.com", 50) == nil {
+		t.Fatal("limite oficial da HackerOne não foi aplicado")
+	}
+	if apiPacer("http://127.0.0.1:8080", "api.hackerone.com", 50) != nil {
+		t.Fatal("cliente de teste recebeu limite da origem oficial")
+	}
+}

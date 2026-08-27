@@ -33,7 +33,13 @@ type intigritiProgram struct {
 	Following bool          `json:"following"`
 	Status    intigritiEnum `json:"status"`
 	Type      intigritiEnum `json:"type"`
-	WebLinks  struct {
+	MinBounty struct {
+		Value float64 `json:"value"`
+	} `json:"minBounty"`
+	MaxBounty struct {
+		Value float64 `json:"value"`
+	} `json:"maxBounty"`
+	WebLinks struct {
 		Detail string `json:"detail"`
 	} `json:"webLinks"`
 }
@@ -77,28 +83,29 @@ func (client *Intigriti) Programs(ctx context.Context) ([]Program, error) {
 			return nil, err
 		}
 		for _, item := range page.Records {
-			program, err := client.program(ctx, item.ID)
+			program, err := client.program(ctx, item)
 			if err != nil {
 				return nil, fmt.Errorf("carregando programa %s: %w", item.Handle, err)
 			}
 			programs = append(programs, program)
 		}
 		offset += len(page.Records)
-		if len(page.Records) == 0 || offset >= page.MaxCount {
+		if len(page.Records) == 0 || page.MaxCount > 0 && offset >= page.MaxCount || page.MaxCount == 0 && len(page.Records) < limit {
 			break
 		}
 	}
 	return programs, nil
 }
 
-func (client *Intigriti) program(ctx context.Context, id string) (Program, error) {
+func (client *Intigriti) program(ctx context.Context, overview intigritiProgram) (Program, error) {
 	var detail intigritiDetail
-	if err := client.api.get(ctx, "/v1/programs/"+url.PathEscape(id), &detail); err != nil {
+	if err := client.api.get(ctx, "/v1/programs/"+url.PathEscape(overview.ID), &detail); err != nil {
 		return Program{}, err
 	}
 	program := Program{
 		Platform: client.Name(), ID: detail.ID, Handle: detail.Handle, Name: detail.Name,
 		State: detail.Status.Value, URL: detail.WebLinks.Detail,
+		Bounty: overview.MinBounty.Value > 0 || overview.MaxBounty.Value > 0,
 	}
 	for _, item := range detail.Domains.Content {
 		asset := NormalizeAsset(item.Endpoint, item.Type.Value)
@@ -106,6 +113,7 @@ func (client *Intigriti) program(ctx context.Context, id string) (Program, error
 		asset.Eligible = true
 		asset.Severity = item.Tier.Value
 		asset.Instruction = item.Description
+		asset.Bounty = program.Bounty
 		program.Assets = append(program.Assets, asset)
 	}
 	if !testingOpen(detail.Status.Value) {

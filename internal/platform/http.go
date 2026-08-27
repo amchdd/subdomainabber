@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const maxResponseSize = 16 << 20
@@ -19,6 +21,7 @@ type apiClient struct {
 	http *http.Client
 	base *url.URL
 	auth func(*http.Request)
+	wait func(context.Context) error
 }
 
 func newAPIClient(client *http.Client, base string, auth func(*http.Request)) *apiClient {
@@ -36,6 +39,11 @@ func (client *apiClient) get(ctx context.Context, path string, output any) error
 	}
 	var lastError error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if client.wait != nil {
+			if err := client.wait(ctx); err != nil {
+				return err
+			}
+		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 		if err != nil {
 			return err
@@ -75,6 +83,15 @@ func (client *apiClient) get(ctx context.Context, path string, output any) error
 		}
 	}
 	return lastError
+}
+
+func apiPacer(base, host string, requestsPerMinute int) func(context.Context) error {
+	parsed, err := url.Parse(base)
+	if err != nil || !strings.EqualFold(parsed.Hostname(), host) || requestsPerMinute <= 0 {
+		return nil
+	}
+	limiter := rate.NewLimiter(rate.Every(time.Minute/time.Duration(requestsPerMinute)), 1)
+	return limiter.Wait
 }
 
 func retryable(status int) bool {
@@ -121,11 +138,24 @@ func (client *apiClient) endpoint(path string) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	basePath := strings.TrimRight(client.base.Path, "/")
+	if !reference.IsAbs() && strings.HasPrefix(path, "/") && basePath != "" &&
+		reference.Path != basePath && !strings.HasPrefix(reference.Path, basePath+"/") {
+		reference.Path = basePath + "/" + strings.TrimLeft(reference.Path, "/")
+	}
 	endpoint := client.base.ResolveReference(reference)
 	if !strings.EqualFold(endpoint.Scheme, client.base.Scheme) || !strings.EqualFold(endpoint.Host, client.base.Host) {
 		return nil, fmt.Errorf("paginação apontou para uma origem diferente")
 	}
 	return endpoint, nil
+}
+
+func visitPage(seen map[string]struct{}, path string) error {
+	if _, found := seen[path]; found {
+		return fmt.Errorf("paginação repetiu a página %s", path)
+	}
+	seen[path] = struct{}{}
+	return nil
 }
 
 type pageLinks struct {

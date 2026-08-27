@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -14,10 +15,12 @@ type Bugcrowd struct {
 }
 
 func NewBugcrowd(client *http.Client, base, token string) *Bugcrowd {
-	return &Bugcrowd{api: newAPIClient(client, base, func(request *http.Request) {
+	api := newAPIClient(client, base, func(request *http.Request) {
 		request.Header.Set("Accept", "application/vnd.bugcrowd+json")
 		request.Header.Set("Authorization", "Token "+token)
-	})}
+	})
+	api.wait = apiPacer(base, "api.bugcrowd.com", 60)
+	return &Bugcrowd{api: api}
 }
 
 func (client *Bugcrowd) Name() string { return "bugcrowd" }
@@ -56,7 +59,11 @@ func (client *Bugcrowd) Programs(ctx context.Context) ([]Program, error) {
 	query.Set("fields[target]", "name,uri,category")
 	path := "/programs?" + query.Encode()
 	var programs []Program
+	seen := make(map[string]struct{})
 	for path != "" {
+		if err := visitPage(seen, path); err != nil {
+			return nil, err
+		}
 		var page bugcrowdPage
 		if err := client.api.get(ctx, path, &page); err != nil {
 			return nil, err
@@ -93,6 +100,7 @@ func (client *Bugcrowd) program(ctx context.Context, item bugcrowdResource, inde
 	if !found {
 		return program, nil
 	}
+	assetsByID := make(map[string]Asset)
 	for _, groupRef := range refs(brief.Relations["target_groups"].Data) {
 		group, found := index[refKey(groupRef)]
 		if !found {
@@ -102,7 +110,25 @@ func (client *Bugcrowd) program(ctx context.Context, item bugcrowdResource, inde
 		if err != nil {
 			return Program{}, fmt.Errorf("carregando grupo %s: %w", group.ID, err)
 		}
-		program.Assets = append(program.Assets, assets...)
+		for _, asset := range assets {
+			current, found := assetsByID[asset.ID]
+			if found {
+				current.Eligible = current.Eligible || asset.Eligible
+				current.Bounty = current.Bounty || asset.Bounty
+				current.Group = mergeGroupNames(current.Group, asset.Group)
+				assetsByID[asset.ID] = current
+				continue
+			}
+			assetsByID[asset.ID] = asset
+		}
+	}
+	keys := make([]string, 0, len(assetsByID))
+	for id := range assetsByID {
+		keys = append(keys, id)
+	}
+	sort.Strings(keys)
+	for _, id := range keys {
+		program.Assets = append(program.Assets, assetsByID[id])
 	}
 	for _, asset := range program.Assets {
 		program.Bounty = program.Bounty || asset.Bounty
@@ -113,6 +139,24 @@ func (client *Bugcrowd) program(ctx context.Context, item bugcrowdResource, inde
 		}
 	}
 	return program, nil
+}
+
+func mergeGroupNames(left, right string) string {
+	if left == "" || left == right {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	groups := strings.Split(left, ", ")
+	for _, group := range groups {
+		if group == right {
+			return left
+		}
+	}
+	groups = append(groups, right)
+	sort.Strings(groups)
+	return strings.Join(groups, ", ")
 }
 
 func (client *Bugcrowd) groupAssets(ctx context.Context, group bugcrowdResource, index map[string]bugcrowdResource) ([]Asset, error) {
@@ -166,7 +210,11 @@ func (client *Bugcrowd) groupAssets(ctx context.Context, group bugcrowdResource,
 
 func (client *Bugcrowd) targets(ctx context.Context, path string) ([]bugcrowdResource, error) {
 	var targets []bugcrowdResource
+	seen := make(map[string]struct{})
 	for path != "" {
+		if err := visitPage(seen, path); err != nil {
+			return nil, err
+		}
 		var page bugcrowdPage
 		if err := client.api.get(ctx, path, &page); err != nil {
 			return nil, err

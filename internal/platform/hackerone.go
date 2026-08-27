@@ -14,10 +14,12 @@ type HackerOne struct {
 }
 
 func NewHackerOne(client *http.Client, base, username, token string) *HackerOne {
-	return &HackerOne{api: newAPIClient(client, base, func(request *http.Request) {
+	api := newAPIClient(client, base, func(request *http.Request) {
 		request.Header.Set("Accept", "application/json")
 		request.SetBasicAuth(username, token)
-	})}
+	})
+	api.wait = apiPacer(base, "api.hackerone.com", 50)
+	return &HackerOne{api: api}
 }
 
 func (client *HackerOne) Name() string { return "hackerone" }
@@ -48,7 +50,11 @@ type hackerOneScope struct {
 func (client *HackerOne) Programs(ctx context.Context) ([]Program, error) {
 	path := "/v1/hackers/programs?page[number]=1&page[size]=100"
 	var programs []Program
+	seen := make(map[string]struct{})
 	for path != "" {
+		if err := visitPage(seen, path); err != nil {
+			return nil, err
+		}
 		var page struct {
 			Data  []hackerOneProgram `json:"data"`
 			Links pageLinks          `json:"links"`
@@ -83,13 +89,16 @@ func (client *HackerOne) Programs(ctx context.Context) ([]Program, error) {
 
 func (client *HackerOne) scopes(ctx context.Context, handle string) ([]Asset, error) {
 	base := "/v1/hackers/programs/" + url.PathEscape(handle) + "/structured_scopes"
-	path := base + "?page[number]=1&page[size]=100"
 	var assets []Asset
-	cursor := ""
-	for path != "" {
+	cursor := "0"
+	seen := make(map[string]struct{})
+	for {
+		if err := visitPage(seen, cursor); err != nil {
+			return nil, fmt.Errorf("paginação de escopos: %w", err)
+		}
+		path := base + "?filter[id__gt]=" + url.QueryEscape(cursor) + "&page[size]=100"
 		var page struct {
-			Data  []hackerOneScope `json:"data"`
-			Links pageLinks        `json:"links"`
+			Data []hackerOneScope `json:"data"`
 		}
 		if err := client.api.get(ctx, path, &page); err != nil {
 			return nil, err
@@ -105,14 +114,14 @@ func (client *HackerOne) scopes(ctx context.Context, handle string) ([]Asset, er
 			}
 			assets = append(assets, asset)
 		}
-		path = page.Links.Next
-		if path == "" && len(page.Data) == 100 {
-			nextCursor := rawID(page.Data[len(page.Data)-1].ID)
-			if nextCursor != "" && nextCursor != cursor {
-				cursor = nextCursor
-				path = base + "?filter[id__gt]=" + url.QueryEscape(cursor) + "&page[size]=100"
-			}
+		if len(page.Data) < 100 {
+			break
 		}
+		next := rawID(page.Data[len(page.Data)-1].ID)
+		if next == "" || next == cursor {
+			return nil, fmt.Errorf("paginação de escopos repetiu o cursor %s", cursor)
+		}
+		cursor = next
 	}
 	return assets, nil
 }

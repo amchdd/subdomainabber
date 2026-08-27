@@ -16,7 +16,8 @@ import (
 )
 
 type syncReconStub struct {
-	calls int
+	calls   int
+	partial bool
 }
 
 func (stub *syncReconStub) Discover(_ context.Context, root string, options discovery.Options) (discovery.Result, error) {
@@ -30,7 +31,11 @@ func (stub *syncReconStub) Discover(_ context.Context, root string, options disc
 			return discovery.Result{}, err
 		}
 	}
-	return discovery.Result{Root: root, Mode: options.Mode, Names: names, Rounds: 1}, nil
+	result := discovery.Result{Root: root, Mode: options.Mode, Names: names, Rounds: 1, Partial: stub.partial}
+	if stub.partial {
+		result.Reasons = []string{"fonte passiva indisponível"}
+	}
+	return result, nil
 }
 
 func TestExpandPlatformAssetsReusesReconForSameRoot(t *testing.T) {
@@ -48,8 +53,12 @@ func TestExpandPlatformAssetsReusesReconForSameRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	stub := &syncReconStub{}
-	if err := expandPlatformAssets(context.Background(), stub, store, runID, discovery.Options{Mode: discovery.ModeExhaustive}); err != nil {
+	notes, err := expandPlatformAssets(context.Background(), stub, store, runID, discovery.Options{Mode: discovery.ModeExhaustive}, true)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("recon completo marcado como parcial: %v", notes)
 	}
 	if stub.calls != 1 {
 		t.Fatalf("a mesma raiz foi enumerada %d vezes", stub.calls)
@@ -60,6 +69,28 @@ func TestExpandPlatformAssetsReusesReconForSameRoot(t *testing.T) {
 	}
 	if len(targets) != 1 || targets[0] != "dev.example.com" {
 		t.Fatalf("alvos correlacionados incorretamente: %v", targets)
+	}
+}
+
+func TestExpandPlatformAssetsReportsPartialRecon(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "partial-sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runID, _ := store.StartPlatformSync([]string{"hackerone"}, true)
+	program := platform.Program{Platform: "hackerone", ID: "p1", Assets: []platform.Asset{{
+		ID: "a1", Value: "*.example.com", Kind: platform.KindWildcard, ReconRoot: "example.com", Eligible: true,
+	}}}
+	if err := store.SavePlatformPrograms(runID, "hackerone", []platform.Program{program}); err != nil {
+		t.Fatal(err)
+	}
+	notes, err := expandPlatformAssets(context.Background(), &syncReconStub{partial: true}, store, runID, discovery.Options{Mode: discovery.ModeExhaustive}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "fonte passiva indisponível") {
+		t.Fatalf("motivo parcial ausente: %v", notes)
 	}
 }
 
@@ -104,6 +135,35 @@ func TestRequirementSettingsUseStrictestRateAndTargetHeaders(t *testing.T) {
 	}
 	if headers["api.example.com"].Get("User-Agent") != "Researcher" || headers["api.example.com"].Get("X-Research") != "yes" {
 		t.Fatalf("headers incompletos: %#v", headers)
+	}
+}
+
+func TestWorkHeadersReportsConflicts(t *testing.T) {
+	headers, warnings := workHeaders([]storage.PlatformWork{
+		{Root: "example.com", UserAgent: "Researcher-A"},
+		{Root: "example.com", UserAgent: "Researcher-B"},
+	})
+	if headers.Get("User-Agent") != "Researcher-A" || len(warnings) != 1 {
+		t.Fatalf("conflito não informado: headers=%v avisos=%v", headers, warnings)
+	}
+}
+
+func TestFinishPlatformSyncPersistsPartialState(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "finish.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runID, _ := store.StartPlatformSync([]string{"hackerone"}, true)
+	if err := finishPlatformSync(store, runID, 4, "example.com: limite atingido", true); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := store.LatestPlatformSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest == nil || latest.Status != "PARTIAL" || latest.TargetCount != 4 || latest.LastError == "" {
+		t.Fatalf("estado parcial incompleto: %+v", latest)
 	}
 }
 

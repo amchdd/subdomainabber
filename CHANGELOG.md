@@ -57,6 +57,9 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - isolamento do catálogo de recon por raiz, reconciliação segura de nomes antigos e separação entre inventário histórico e alvos DNS acionáveis;
 - indicação explícita de recon parcial quando fontes ou limites impedem uma atualização completa;
 - retomada de checkpoints vazios sem pular as fontes passivas e uso do limite global já durante a coleta e o scraping;
+- base correta da Researcher API da Intigriti, paginação por cursor da HackerOne e detecção de ciclos nas APIs;
+- preservação dos vínculos de plataforma durante recon parcial e substituição atômica após uma coleta completa;
+- fusão determinística de targets compartilhados entre grupos da Bugcrowd e identificação de recompensas da Intigriti;
 - configurações numéricas inválidas são rejeitadas antes da criação de limitadores, canais e rotinas concorrentes; o modo daemon exige intervalo mínimo de um minuto e a enumeração impõe limites seguros de concorrência;
 - alertas NS e tentativas agressivas são deduplicados pelo corte de zona, evitando mensagens repetidas por hosts descendentes;
 - descobertas `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` nunca são enviadas ao Discord;

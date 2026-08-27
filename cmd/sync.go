@@ -21,7 +21,7 @@ import (
 
 const (
 	hackerOneAPI = "https://api.hackerone.com"
-	intigritiAPI = "https://api.intigriti.com"
+	intigritiAPI = "https://api.intigriti.com/external/researcher"
 	bugcrowdAPI  = "https://api.bugcrowd.com"
 )
 
@@ -58,10 +58,12 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 		var runID, stage string
+		var syncNote string
 		full := !syncIncremental
 		selected := append([]string(nil), syncPlatforms...)
 		if syncResume && latest != nil && latest.Status == "RUNNING" {
 			runID, stage, full = latest.ID, latest.Stage, latest.Full
+			syncNote = latest.LastError
 			selected = append([]string(nil), latest.Platforms...)
 			if !cfg.Silent {
 				fmt.Fprintf(os.Stderr, "retomando sincronização %s na etapa %s\n", runID, strings.ToLower(stage))
@@ -69,6 +71,7 @@ var syncCmd = &cobra.Command{
 		}
 
 		if runID == "" || stage == "CATALOG" {
+			syncLog(cfg.Silent, "atualizando catálogo das plataformas")
 			apiLimiter := ratelimit.New(cfg.RateLimit)
 			apiHTTP, err := netclient.NewScopedClient(time.Duration(cfg.Timeout)*time.Second, cfg.Proxy, apiLimiter)
 			if err != nil {
@@ -97,6 +100,7 @@ var syncCmd = &cobra.Command{
 			if err := syncPrograms(ctx, store, runID, clients); err != nil {
 				return err
 			}
+			syncLog(cfg.Silent, "catálogo atualizado")
 			if err := store.SetPlatformSyncStage(runID, "RECON", ""); err != nil {
 				return err
 			}
@@ -118,18 +122,27 @@ var syncCmd = &cobra.Command{
 			if limit > 0 && limit < reconConfig.RateLimit {
 				reconConfig.RateLimit = limit
 			}
-			recon, err := newReconEngine(&reconConfig)
-			if err != nil {
-				return err
-			}
-			if err := expandPlatformAssets(ctx, recon, store, runID, discovery.Options{
+			options := discovery.Options{
 				Mode:               discovery.Mode(syncReconMode),
 				Concurrency:        syncReconConcurrency,
 				MaxRounds:          syncReconRounds,
 				MaxDepth:           syncReconDepth,
 				MaxCandidates:      syncReconLimit,
 				RecursiveThreshold: syncRecursiveThreshold,
-			}); err != nil {
+			}
+			if err := discovery.ValidateOptions(options); err != nil {
+				return err
+			}
+			recon, err := newReconEngine(&reconConfig)
+			if err != nil {
+				return err
+			}
+			notes, err := expandPlatformAssets(ctx, recon, store, runID, options, cfg.Silent)
+			if err != nil {
+				return err
+			}
+			syncNote = strings.Join(notes, "\n")
+			if err := store.SetPlatformSyncNote(runID, syncNote); err != nil {
 				return err
 			}
 			if err := store.SetPlatformSyncStage(runID, "SCAN", ""); err != nil {
@@ -143,9 +156,10 @@ var syncCmd = &cobra.Command{
 			return err
 		}
 		if !syncScan || len(targets) == 0 {
-			return store.FinishPlatformSync(runID, "COMPLETED", len(targets), "")
+			return finishPlatformSync(store, runID, len(targets), syncNote, cfg.Silent)
 		}
-		if err := runPlatformScan(ctx, store, runID, latest, targets); err != nil {
+		syncLog(cfg.Silent, "iniciando varredura de %d alvo(s)", len(targets))
+		if err := runPlatformScan(ctx, store, runID, latest, targets, cfg.Silent); err != nil {
 			if ctx.Err() == nil {
 				_ = store.FinishPlatformSync(runID, "FAILED", len(targets), err.Error())
 			}
@@ -154,13 +168,7 @@ var syncCmd = &cobra.Command{
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err := store.FinishPlatformSync(runID, "COMPLETED", len(targets), ""); err != nil {
-			return err
-		}
-		if !cfg.Silent {
-			fmt.Fprintf(os.Stderr, "sincronização %s concluída: %d alvo(s) ativos\n", runID, len(targets))
-		}
-		return nil
+		return finishPlatformSync(store, runID, len(targets), syncNote, cfg.Silent)
 	},
 }
 
@@ -242,10 +250,10 @@ func syncPrograms(ctx context.Context, store *storage.Store, runID string, clien
 	return nil
 }
 
-func expandPlatformAssets(ctx context.Context, runner reconRunner, store *storage.Store, runID string, options discovery.Options) error {
+func expandPlatformAssets(ctx context.Context, runner reconRunner, store *storage.Store, runID string, options discovery.Options, silent bool) ([]string, error) {
 	works, err := store.PendingPlatformAssets(ctx, runID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	groups := make(map[string][]storage.PlatformWork)
 	var roots []string
@@ -256,39 +264,53 @@ func expandPlatformAssets(ctx context.Context, runner reconRunner, store *storag
 		groups[work.Root] = append(groups[work.Root], work)
 	}
 	sort.Strings(roots)
-	for _, root := range roots {
+	var notes []string
+	for index, root := range roots {
+		syncLog(silent, "recon %d/%d: %s", index+1, len(roots), root)
 		for _, work := range groups[root] {
 			_ = store.CompletePlatformAsset(work.ID, "RUNNING", "")
 		}
 		rootOptions := options
-		rootOptions.Headers = workHeaders(groups[root])
+		var warnings []string
+		rootOptions.Headers, warnings = workHeaders(groups[root])
+		for _, warning := range warnings {
+			syncLog(silent, "%s", warning)
+		}
 		result, _, err := runRecon(ctx, runner, store, root, rootOptions, true)
 		if err != nil {
 			for _, work := range groups[root] {
 				_ = store.CompletePlatformAsset(work.ID, "FAILED", err.Error())
 			}
-			return fmt.Errorf("recon de %s: %w", root, err)
+			return notes, fmt.Errorf("recon de %s: %w", root, err)
+		}
+		if result.Partial {
+			reason := strings.Join(result.Reasons, "; ")
+			if reason == "" {
+				reason = "resultado incompleto"
+			}
+			notes = append(notes, fmt.Sprintf("%s: %s", root, reason))
+			syncLog(silent, "recon parcial de %s: %s", root, reason)
 		}
 		for _, work := range groups[root] {
-			if err := store.SavePlatformTargets(work, result.Targets()); err != nil {
-				return err
+			if err := store.SavePlatformTargets(work, result.Targets(), result.Partial); err != nil {
+				return notes, err
 			}
 			if err := store.CompletePlatformAsset(work.ID, "COMPLETED", ""); err != nil {
-				return err
+				return notes, err
 			}
 		}
 	}
-	return nil
+	return notes, nil
 }
 
-func runPlatformScan(ctx context.Context, store *storage.Store, runID string, latest *storage.PlatformSync, targets []string) error {
+func runPlatformScan(ctx context.Context, store *storage.Store, runID string, latest *storage.PlatformSync, targets []string, silent bool) error {
 	requirements, err := store.PlatformTargetRules(ctx)
 	if err != nil {
 		return err
 	}
 	limit, headers, warnings := requirementSettings(requirements)
 	for _, warning := range warnings {
-		fmt.Fprintln(os.Stderr, warning)
+		syncLog(silent, "%s", warning)
 	}
 	session := &scanSession{RateLimit: limit, TargetHeaders: headers}
 	if latest != nil && latest.ID == runID && latest.Stage == "SCAN" && latest.ScanRunID != "" {
@@ -313,7 +335,10 @@ func runPlatformScan(ctx context.Context, store *storage.Store, runID string, la
 	return finishScanSession(ctx, session, err)
 }
 
-func workHeaders(works []storage.PlatformWork) http.Header {
+func workHeaders(works []storage.PlatformWork) (http.Header, []string) {
+	if len(works) == 0 {
+		return nil, nil
+	}
 	var requirements []storage.PlatformRequirement
 	for _, work := range works {
 		requirements = append(requirements, storage.PlatformRequirement{
@@ -325,8 +350,28 @@ func workHeaders(works []storage.PlatformWork) http.Header {
 			},
 		})
 	}
-	_, headers, _ := requirementSettings(requirements)
-	return headers[works[0].Root]
+	_, headers, warnings := requirementSettings(requirements)
+	return headers[works[0].Root], warnings
+}
+
+func finishPlatformSync(store *storage.Store, runID string, count int, note string, silent bool) error {
+	status := "COMPLETED"
+	description := "concluída"
+	if note != "" {
+		status = "PARTIAL"
+		description = "concluída parcialmente"
+	}
+	if err := store.FinishPlatformSync(runID, status, count, note); err != nil {
+		return err
+	}
+	syncLog(silent, "sincronização %s %s: %d alvo(s) ativos", runID, description, count)
+	return nil
+}
+
+func syncLog(silent bool, format string, arguments ...any) {
+	if !silent {
+		fmt.Fprintf(os.Stderr, format+"\n", arguments...)
+	}
 }
 
 func requirementSettings(requirements []storage.PlatformRequirement) (int, map[string]http.Header, []string) {
