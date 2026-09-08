@@ -41,8 +41,9 @@ func (candidate ReconCandidate) SourceNames() []string {
 }
 
 type ReconCheckpoint struct {
-	Round    int      `json:"round"`
-	Frontier []string `json:"frontier,omitempty"`
+	Round     int      `json:"round"`
+	Frontier  []string `json:"frontier,omitempty"`
+	Attempted []string `json:"attempted,omitempty"`
 }
 
 type ReconSourceRun struct {

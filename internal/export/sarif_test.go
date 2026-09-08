@@ -6,10 +6,11 @@ import (
 	"github.com/amchdd/subdomainabber/internal/core"
 )
 
-func TestSARIFContainsOnlyActionableResults(t *testing.T) {
+func TestSARIFContainsOnlyPrioritizedResults(t *testing.T) {
 	document := buildSARIF([]core.HostAnalysis{
 		{Host: "healthy.example", Classification: "HEALTHY"},
 		{Host: "orphan.example", Classification: "ORPHANED"},
+		{Host: "blocked.example", Classification: "MISCONFIGURED", ResultState: core.ResultSuppressed},
 	})
 	if len(document.Runs) != 1 || len(document.Runs[0].Results) != 1 {
 		t.Fatalf("documento inesperado: %+v", document)

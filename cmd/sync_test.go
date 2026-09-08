@@ -183,6 +183,22 @@ func TestTargetHeaderTransportOnlyChangesMatchingHost(t *testing.T) {
 	}
 }
 
+func TestSyncReconRoundsDefaultIsSelectedByMode(t *testing.T) {
+	flag := syncCmd.Flags().Lookup("recon-rounds")
+	if flag == nil || flag.DefValue != "0" {
+		t.Fatalf("recon-rounds deveria delegar o padrão ao modo: %+v", flag)
+	}
+}
+
+func TestSyncKeepsReconTuningOutOfBasicHelp(t *testing.T) {
+	for _, name := range []string{"recon-rounds", "recon-depth", "recon-limit", "recursive-threshold"} {
+		flag := syncCmd.Flags().Lookup(name)
+		if flag == nil || !flag.Hidden || flag.DefValue != "0" {
+			t.Errorf("flag %s deveria delegar ao modo e permanecer oculta: %+v", name, flag)
+		}
+	}
+}
+
 type transportFunc func(*http.Request) (*http.Response, error)
 
 func (function transportFunc) RoundTrip(request *http.Request) (*http.Response, error) {

@@ -11,6 +11,56 @@ import (
 	"github.com/amchdd/subdomainabber/internal/storage"
 )
 
+func TestReconProgressRollback(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "checkpoint.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	runID, err := store.StartRecon("example.test", "standard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.GetDB().Exec(`CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF checkpoint_json ON recon_runs BEGIN SELECT RAISE(ABORT, 'falha simulada'); END`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []core.ReconCandidate{{Name: "api.example.test", Root: "example.test", Resolved: true}}
+	checkpoint := core.ReconCheckpoint{Round: 1, Frontier: []string{"api.example.test"}, Attempted: []string{"api.example.test"}}
+	sources := []core.ReconSourceRun{{Name: "fonte", Count: 1}}
+	if err := store.SaveReconProgress(runID, candidates, checkpoint, sources); err == nil {
+		t.Fatal("falha no checkpoint foi ignorada")
+	}
+	names, err := store.ReconRunCandidates(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Fatal("catálogo avançou apesar da falha no checkpoint")
+	}
+	if _, err := store.GetDB().Exec(`DROP TRIGGER fail_checkpoint`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveReconProgress(runID, candidates, checkpoint, sources); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.ReconCheckpoint(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err = store.ReconRunCandidates(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.ReconSources(context.Background(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Round != 1 || len(loaded.Attempted) != 1 || len(names) != 1 || len(runs) != 1 {
+		t.Fatal("catálogo, checkpoint e fontes não foram persistidos juntos")
+	}
+}
+
 func TestReconRunPersistsCandidatesAndCheckpoint(t *testing.T) {
 	store, err := storage.New(filepath.Join(t.TempDir(), "recon.db"))
 	if err != nil {

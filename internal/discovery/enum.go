@@ -29,16 +29,21 @@ func NewEngineWithClient(resolver *dns.Resolver, cfg *config.Config, client *htt
 	if cfg == nil {
 		cfg = config.Defaults()
 	}
+	providers := []passive.Provider{
+		&passive.CrtshProvider{Client: client},
+		&passive.CommonCrawlProvider{Client: client},
+		&passive.WaybackProvider{Client: client},
+		&passive.WaybackCDXProvider{Client: client},
+		&passive.AlienVaultProvider{Client: client, Token: cfg.AlienVaultToken},
+		&passive.CertSpotterProvider{Client: client, Token: cfg.CertSpotterToken},
+		&passive.URLScanProvider{Client: client, Token: cfg.UrlscanToken},
+	}
+	if cfg.SecurityTrailsToken != "" {
+		providers = append(providers, &passive.SecurityTrailsProvider{Client: client, Token: cfg.SecurityTrailsToken})
+	}
 	return &Engine{
-		resolver: resolver,
-		providers: []passive.Provider{
-			&passive.CrtshProvider{Client: client},
-			&passive.WaybackProvider{Client: client},
-			&passive.WaybackCDXProvider{Client: client},
-			&passive.AlienVaultProvider{Client: client, Token: cfg.AlienVaultToken},
-			&passive.CertSpotterProvider{Client: client, Token: cfg.CertSpotterToken},
-			&passive.URLScanProvider{Client: client, Token: cfg.UrlscanToken},
-		},
+		resolver:         resolver,
+		providers:        providers,
 		noWildcardFilter: cfg.NoWildcardFilter,
 		client:           scraperClient(client),
 	}
@@ -51,6 +56,9 @@ func (engine *Engine) Enumerate(ctx context.Context, domain, wordlist string, co
 	words, err := LoadWords(wordlist)
 	if err != nil {
 		return nil, err
+	}
+	if len(words) > 0 {
+		words = append(words, DefaultWords(ModeStandard)...)
 	}
 	result, err := engine.Discover(ctx, domain, Options{
 		Mode:        ModeStandard,

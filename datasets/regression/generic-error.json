@@ -1,0 +1,9 @@
+{
+  "host": "generic.example.test",
+  "classification": "UNKNOWN",
+  "mock": {
+    "dns": {"a": ["192.0.2.2"]},
+    "http": {"status": 404, "body": "Not Found"},
+    "tls": {"subject": "generic.example.test", "issuer": "CA de teste"}
+  }
+}

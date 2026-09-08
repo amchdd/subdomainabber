@@ -173,6 +173,38 @@ func (store *Store) SaveReconCandidates(runID string, candidates []core.ReconCan
 		return fmt.Errorf("iniciando persistência do recon: %w", err)
 	}
 	defer tx.Rollback()
+	if err := saveReconCandidates(tx, runID, candidates); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (store *Store) SaveReconProgress(runID string, candidates []core.ReconCandidate, checkpoint core.ReconCheckpoint, sources []core.ReconSourceRun) error {
+	checkpointJSON, err := json.Marshal(checkpoint)
+	if err != nil {
+		return err
+	}
+	sourcesJSON, err := json.Marshal(sources)
+	if err != nil {
+		return err
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	tx, err := store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := saveReconCandidates(tx, runID, candidates); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE recon_runs SET checkpoint_json = ?, sources_json = ? WHERE id = ?`, string(checkpointJSON), string(sourcesJSON), runID); err != nil {
+		return fmt.Errorf("salvando progresso do recon: %w", err)
+	}
+	return tx.Commit()
+}
+
+func saveReconCandidates(tx *sql.Tx, runID string, candidates []core.ReconCandidate) error {
 	var root string
 	if err := tx.QueryRow(`SELECT root FROM recon_runs WHERE id = ?`, runID).Scan(&root); err != nil {
 		return fmt.Errorf("consultando execução de recon: %w", err)
@@ -230,9 +262,6 @@ func (store *Store) SaveReconCandidates(runID string, candidates []core.ReconCan
 				return fmt.Errorf("salvando origem de %s: %w", candidate.Name, err)
 			}
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("confirmando persistência do recon: %w", err)
 	}
 	return nil
 }

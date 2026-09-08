@@ -98,6 +98,102 @@ func Confidence(value string) string {
 	}
 }
 
+func Rule(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "HTTP_BLOCKED_NO_EXPOSURE":
+		return "HTTP bloqueado sem exposição"
+	case "EDGE_BLOCKED_NO_EXPOSURE":
+		return "borda bloqueada sem exposição"
+	case "HTTP_RESOURCE_NOT_AVAILABLE":
+		return "recurso HTTP indisponível"
+	case "HTTP_ERROR_NO_EXPOSURE":
+		return "erro HTTP sem exposição"
+	case "PLAINTEXT_WEB_CONTENT":
+		return "conteúdo web disponível sem TLS"
+	case "PLAINTEXT_AUTH_INTERFACE":
+		return "interface de autenticação disponível sem TLS"
+	case "SENSITIVE_COOKIE_OVER_HTTP":
+		return "cookie sensível emitido por HTTP"
+	case "REDIRECT_DESTINATION_DNS_MISSING":
+		return "destino DNS do redirect ausente"
+	case "REDIRECT_DESTINATION_INCONCLUSIVE":
+		return "destino do redirect inconclusivo"
+	case "CSP_HARDENING_ONLY":
+		return "observação de hardening CSP"
+	case "HSTS_POSTURE_ONLY":
+		return "observação de postura HSTS"
+	case "HTTP_HTTPS_UPGRADE":
+		return "upgrade HTTP para HTTPS"
+	case "TIMEOUT":
+		return "tempo esgotado"
+	case "TLS_ERROR":
+		return "erro TLS"
+	case "DNS_SERVFAIL":
+		return "DNS SERVFAIL"
+	case "CONNECTION_REFUSED":
+		return "conexão recusada"
+	case "INSUFFICIENT_EVIDENCE":
+		return "evidência insuficiente"
+	case "UNSUPPORTED_PROTOCOL":
+		return "protocolo não suportado"
+	default:
+		return value
+	}
+}
+
+func Reason(value string) string {
+	upper := strings.ToUpper(strings.TrimSpace(value))
+	switch {
+	case strings.HasPrefix(upper, "HTTP_STATUS_"):
+		return "status HTTP " + strings.TrimPrefix(upper, "HTTP_STATUS_")
+	case strings.HasPrefix(upper, "HTTPS_STATUS_"):
+		return "status HTTPS " + strings.TrimPrefix(upper, "HTTPS_STATUS_")
+	case strings.HasPrefix(upper, "EDGE_PROVIDER_"):
+		provider := strings.TrimPrefix(upper, "EDGE_PROVIDER_")
+		return "provedor de borda " + strings.ReplaceAll(provider, "_", " ")
+	}
+	switch upper {
+	case "HTTP_NO_HTTPS_UPGRADE":
+		return "HTTP sem upgrade para HTTPS"
+	case "HTTP_REDIRECTS_TO_HTTPS":
+		return "HTTP redireciona para HTTPS"
+	case "HTTPS_REDIRECTS_TO_HTTP":
+		return "HTTPS redireciona para HTTP"
+	case "EDGE_RESPONSE":
+		return "resposta de borda ou CDN"
+	case "HTML_CONTENT":
+		return "conteúdo HTML"
+	case "PASSWORD_FORM":
+		return "formulário com campo de senha"
+	case "SENSITIVE_COOKIE_WITHOUT_SECURE":
+		return "cookie sensível sem Secure"
+	case "HTTP_HTTPS_CONTENT_SIMILAR", "SIMILAR_CONTENT":
+		return "conteúdo HTTP e HTTPS semelhante"
+	case "SAME_STATUS":
+		return "mesmo status HTTP e HTTPS"
+	case "SAME_SERVER":
+		return "mesmo servidor HTTP e HTTPS"
+	case "HTTPS_RESPONSE":
+		return "resposta HTTPS observada"
+	case "HSTS_ABSENT":
+		return "HSTS ausente"
+	case "CSP_ABSENT":
+		return "CSP ausente"
+	case "HTTPS_STATUS_2XX":
+		return "resposta HTTPS bem-sucedida"
+	case "REDIRECT_LOCATION_PRESENT":
+		return "cabeçalho Location presente"
+	case "DESTINATION_NXDOMAIN":
+		return "destino NXDOMAIN"
+	case "DESTINATION_NO_DATA":
+		return "destino sem registros A/AAAA"
+	case "UNSUPPORTED_PROTOCOL":
+		return "protocolo não suportado"
+	default:
+		return value
+	}
+}
+
 // Value traduz estados estruturados somente na apresentação. Códigos de
 // protocolo como NXDOMAIN, SERVFAIL e REFUSED permanecem inalterados.
 func Value(value string) string {
@@ -138,6 +234,24 @@ func Value(value string) string {
 		return "NÃO TESTADA"
 	case "NOT_APPLICABLE":
 		return "NÃO APLICÁVEL"
+	case "OBSERVATION":
+		return "OBSERVAÇÃO"
+	case "CANDIDATE":
+		return "CANDIDATO"
+	case "CONFIRMED":
+		return "CONFIRMADO"
+	case "SUPPRESSED":
+		return "SUPRIMIDO"
+	case "INCONCLUSIVE":
+		return "INCONCLUSIVO"
+	case "HEALTHY":
+		return "SAUDÁVEL"
+	case "EDGE_RESPONSE":
+		return "RESPOSTA DE BORDA"
+	case "APPLICATION_RESPONSE":
+		return "RESPOSTA DE APLICAÇÃO"
+	case "RESOURCE_NOT_AVAILABLE":
+		return "RECURSO INDISPONÍVEL"
 	case "NO_DIFFERENCE":
 		return "SEM DIFERENÇA"
 	case "TRANSPORT_FAILURE":
@@ -185,6 +299,22 @@ func EvidenceDescription(evidence core.Evidence) string {
 		return "a cadeia termina em um hostname inexistente ou recurso removido"
 	case "HTTP_HTTPS_REDIRECT_MISSING":
 		return "o endpoint HTTP não faz upgrade direto para HTTPS no mesmo hostname"
+	case "HTTP_NO_HTTPS_UPGRADE":
+		return "o endpoint HTTP não conclui o upgrade para HTTPS"
+	case "HTTP_BLOCKED_WITHOUT_REDIRECT":
+		return "a resposta HTTP bloqueia o conteúdo sem demonstrar exposição da aplicação"
+	case "HTTP_EDGE_BLOCK":
+		return "a resposta sem upgrade foi produzida pela borda ou pelo CDN"
+	case "PLAINTEXT_WEB_CONTENT":
+		return "conteúdo HTML navegável está disponível por HTTP"
+	case "PLAINTEXT_AUTH_INTERFACE":
+		return "um formulário com campo de senha está disponível por HTTP"
+	case "HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE":
+		return "cookie sensível da aplicação foi emitido por HTTP sem Secure"
+	case "HTTPS_HSTS_ABSENT":
+		return "HSTS não foi observado; trata-se de postura de transporte"
+	case "HTTPS_CSP_ABSENT":
+		return "CSP não foi observada em uma página HTML 2xx; trata-se de hardening"
 	case "HTTP_HTTPS_PORT_INCONSISTENT":
 		return "o upgrade redireciona para uma porta HTTPS não convencional"
 	case "HTTPS_DOWNGRADE_REDIRECT":

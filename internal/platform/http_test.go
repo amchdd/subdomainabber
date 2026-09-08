@@ -4,8 +4,44 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestAPIRedirectStaysOnOrigin(t *testing.T) {
+	var received atomic.Int32
+	external := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		received.Add(1)
+		_, _ = writer.Write([]byte(`{}`))
+	}))
+	defer external.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, external.URL, http.StatusFound)
+	}))
+	defer server.Close()
+	client := newAPIClient(server.Client(), server.URL, func(request *http.Request) { request.Header.Set("Authorization", "Bearer teste") })
+	var output map[string]any
+	if err := client.get(context.Background(), "/", &output); err == nil {
+		t.Fatal("redirect externo foi aceito")
+	}
+	if received.Load() != 0 {
+		t.Fatal("a API encaminhou a requisição para outra origem")
+	}
+}
+
+func TestAPIErrorOmitsResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "credencial-simulada", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	client := newAPIClient(server.Client(), server.URL, nil)
+	var output any
+	err := client.get(context.Background(), "/", &output)
+	if err == nil || strings.Contains(err.Error(), "credencial-simulada") {
+		t.Fatalf("o erro expôs o conteúdo retornado pela API: %v", err)
+	}
+}
 
 func TestAPIClientRetriesRateLimit(t *testing.T) {
 	attempts := 0

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/amchdd/subdomainabber/internal/core"
+	"github.com/amchdd/subdomainabber/pkg/signatures"
 )
 
 const maxRedirectDepth = 20
@@ -19,11 +20,16 @@ type webResolver interface {
 	ResolveAddressStatus(context.Context, string) core.DNSStatus
 }
 
+type webAddressResolver interface {
+	ResolveA(context.Context, string) ([]string, error)
+	ResolveAAAA(context.Context, string) ([]string, error)
+}
+
 type RedirectCollector struct {
 	resolver webResolver
 	client   *http.Client
 	depth    int
-	allowed  map[string]struct{}
+	sigs     []signatures.Fingerprint
 }
 
 func NewRedirectCollector(resolver webResolver, client *http.Client, depth int) *RedirectCollector {
@@ -37,14 +43,13 @@ func NewRedirectCollector(resolver webResolver, client *http.Client, depth int) 
 		resolver: resolver,
 		client:   noRedirectClient(client),
 		depth:    depth,
-		allowed:  make(map[string]struct{}),
 	}
 }
 
 func (collector *RedirectCollector) Phase() CollectorPhase { return PhaseImpact }
 
-func (collector *RedirectCollector) SetAllowedHosts(hosts []string) {
-	collector.allowed = normalizedHostSet(hosts)
+func (collector *RedirectCollector) SetSignatures(sigs []signatures.Fingerprint) {
+	collector.sigs = append([]signatures.Fingerprint(nil), sigs...)
 }
 
 func (collector *RedirectCollector) Collect(ctx context.Context, analysis *core.HostAnalysis) error {
@@ -65,9 +70,22 @@ func (collector *RedirectCollector) Collect(ctx context.Context, analysis *core.
 func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis *core.HostAnalysis, scheme string) {
 	current := &url.URL{Scheme: scheme, Host: analysis.Host, Path: "/"}
 	chain := core.RedirectChain{Scheme: scheme, FinalURL: current.String()}
-	followed := false
+	seen := make(map[string]struct{})
+	details := make(map[string]core.RedirectHop)
 
 	for index := 0; index < collector.depth; index++ {
+		identity := *current
+		identity.Scheme = strings.ToLower(identity.Scheme)
+		identity.Host = strings.ToLower(identity.Host)
+		identity.Fragment, identity.RawFragment = "", ""
+		key := identity.String()
+		if _, duplicate := seen[key]; duplicate {
+			chain.StoppedReason = "REDIRECT_LOOP"
+			break
+		}
+		seen[key] = struct{}{}
+
+		hop := collector.redirectHop(ctx, analysis, index, current, details)
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, current.String(), nil)
 		if err != nil {
 			chain.StoppedReason = "INVALID_URL"
@@ -75,54 +93,80 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 		}
 		response, err := collector.client.Do(request)
 		if err != nil {
+			chain.Hops = append(chain.Hops, hop)
 			chain.StoppedReason = "TRANSPORT_ERROR"
+			analysis.AddEvidence(core.Evidence{
+				Type: "REDIRECT_DESTINATION_TRANSPORT_ERROR", Source: scheme,
+				Description: "A coleta do destino da cadeia falhou no transporte.",
+				Weight:      0, Confidence: 100,
+				Metadata: map[string]string{"target_url": current.String(), "target_host": hop.Hostname},
+			})
 			break
 		}
+		var body []byte
 		if response.Body != nil {
-			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 32<<10))
+			body, _ = io.ReadAll(io.LimitReader(response.Body, 32<<10))
 			_ = response.Body.Close()
 		}
 
 		location := response.Header.Get("Location")
-		chain.Hops = append(chain.Hops, core.RedirectHop{
-			Index: index + 1, URL: current.String(), StatusCode: response.StatusCode, Location: location,
-		})
+		hop.StatusCode = response.StatusCode
+		hop.Location = location
+		hop.ResponseKind = responseKind(response.StatusCode, response.Header, body)
+		hop.EdgeProvider = edgeProvider(response.Header, body)
+		hop.Provider, hop.MatchedFingerprint = collector.redirectFingerprint(hop, response, body)
+		chain.Hops = append(chain.Hops, hop)
 		chain.FinalURL = current.String()
 		if !isRedirectStatus(response.StatusCode) || location == "" {
-			if followed && (response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone) {
-				collector.addDanglingEvidence(analysis, normalizeWebHost(current.Hostname()), current.String(), core.DNSStatusResolved, response.StatusCode)
+			chain.StoppedReason = "FINAL_RESPONSE"
+			if hop.MatchedFingerprint != "" {
+				chain.StoppedReason = "DESTINATION_PROVIDER_ERROR"
+				analysis.AddEvidence(core.Evidence{
+					Type: "REDIRECT_DESTINATION_PROVIDER_ERROR", Source: scheme,
+					Description: "O destino final apresentou uma assinatura específica de recurso ausente no provedor.",
+					Weight:      0, Confidence: 95,
+					Metadata: map[string]string{
+						"target_url": hop.URL, "target_host": hop.Hostname, "provider": hop.Provider,
+						"matched_fingerprint": hop.MatchedFingerprint, "http_status": strconv.Itoa(hop.StatusCode),
+					},
+				})
 			}
 			break
 		}
 
 		next, err := current.Parse(location)
-		if err != nil || (next.Scheme != "http" && next.Scheme != "https") || next.Hostname() == "" || next.User != nil {
+		if err != nil || next.Hostname() == "" || next.User != nil {
 			chain.StoppedReason = "INVALID_LOCATION"
 			break
 		}
-		nextHost := normalizeWebHost(next.Hostname())
-		if !sameWebHost(nextHost, analysis.Host) {
-			if _, ok := collector.allowed[nextHost]; !ok {
-				chain.FinalURL = next.String()
-				chain.StoppedReason = "OUT_OF_SCOPE"
-				analysis.AddEvidence(core.Evidence{
-					Type:        "REDIRECT_TARGET_OUT_OF_SCOPE",
-					Source:      scheme,
-					Description: "A cadeia apontou para um hostname não incluído em --related-hosts; a consulta foi interrompida.",
-					Weight:      0, Confidence: 100,
-					Metadata: map[string]string{"target_url": next.String(), "target_host": nextHost},
-				})
-				break
-			}
-			status := collector.targetStatus(ctx, nextHost)
-			if status == core.DNSStatusNXDomain || status == core.DNSStatusNoData {
-				chain.FinalURL = next.String()
-				chain.StoppedReason = "DANGLING_TARGET"
-				collector.addDanglingEvidence(analysis, nextHost, next.String(), status, 0)
-				break
-			}
+		if next.Scheme != "http" && next.Scheme != "https" {
+			chain.FinalURL = next.String()
+			chain.StoppedReason = "UNSUPPORTED_PROTOCOL"
+			analysis.AddEvidence(core.Evidence{
+				Type: "REDIRECT_UNSUPPORTED_PROTOCOL", Source: scheme,
+				Description: "O cabeçalho Location usa um protocolo que o analisador HTTP não acompanha.",
+				Weight:      0, Confidence: 100,
+				Metadata: map[string]string{"target_url": next.String(), "scheme": next.Scheme},
+			})
+			break
 		}
-		followed = true
+		nextHost := normalizeWebHost(next.Hostname())
+		nextHop := collector.redirectHop(ctx, analysis, index+1, next, details)
+		if nextHop.DNSStatus != core.DNSStatusResolved {
+			chain.Hops = append(chain.Hops, nextHop)
+			chain.FinalURL = next.String()
+			chain.StoppedReason = "DESTINATION_" + string(nextHop.DNSStatus)
+			analysis.AddEvidence(core.Evidence{
+				Type: "REDIRECT_DESTINATION_" + string(nextHop.DNSStatus), Source: scheme,
+				Description: "O destino publicado no cabeçalho Location não possui resolução DNS utilizável.",
+				Weight:      0, Confidence: 100,
+				Metadata: map[string]string{
+					"target_url": next.String(), "target_host": nextHost,
+					"dns_status": string(nextHop.DNSStatus), "cname": strings.Join(nextHop.CNAME, ","),
+				},
+			})
+			break
+		}
 		current = next
 		if index == collector.depth-1 {
 			chain.FinalURL = next.String()
@@ -139,38 +183,99 @@ func (collector *RedirectCollector) collectScheme(ctx context.Context, analysis 
 	for _, hop := range chain.Hops {
 		analysis.AddEvidence(core.Evidence{
 			Type: "HTTP_REDIRECT_HOP", Source: scheme,
-			Description: fmt.Sprintf("Hop %d respondeu com HTTP %d.", hop.Index, hop.StatusCode),
+			Description: fmt.Sprintf("Hop %d registrou o destino %s.", hop.Index, hop.URL),
 			Weight:      0, Confidence: 100,
 			Metadata: map[string]string{
 				"index": strconv.Itoa(hop.Index), "url": hop.URL,
+				"hostname": hop.Hostname, "scheme": hop.Scheme,
 				"status": strconv.Itoa(hop.StatusCode), "location": hop.Location,
+				"dns_status": string(hop.DNSStatus), "provider": hop.Provider,
+				"cname": strings.Join(hop.CNAME, ","), "addresses": strings.Join(hop.Addresses, ","),
+				"response_kind": hop.ResponseKind, "edge_provider": hop.EdgeProvider,
+				"matched_fingerprint": hop.MatchedFingerprint,
 			},
 		})
 	}
 	analysis.SetRedirectChain(scheme, chain)
 }
 
-func (collector *RedirectCollector) targetStatus(ctx context.Context, host string) core.DNSStatus {
-	if collector.resolver == nil {
-		return core.DNSStatusError
+func (collector *RedirectCollector) redirectFingerprint(hop core.RedirectHop, response *http.Response, body []byte) (string, string) {
+	if response == nil || len(body) == 0 {
+		return hop.Provider, ""
 	}
-	chain, _ := collector.resolver.ResolveCNAMEChain(ctx, host)
-	if len(chain) > 0 {
-		host = chain[len(chain)-1]
+	hosts := append([]string{hop.Hostname}, hop.CNAME...)
+	for index := range collector.sigs {
+		signature := &collector.sigs[index]
+		if signature.Fingerprint == "" || isGenericHTTPFingerprint(signature.Fingerprint) || fingerprintSpecificity(signature.Fingerprint) < minimumTakeoverFingerprintSpecificity {
+			continue
+		}
+		if _, matched := matchingCNAME(hosts, signature.CNames); !matched {
+			continue
+		}
+		if signature.HTTPStatus != nil && *signature.HTTPStatus != response.StatusCode {
+			continue
+		}
+		headersMatch := true
+		for name, value := range signature.Headers {
+			observed := response.Header.Get(name)
+			if observed == "" || (value != "" && !strings.Contains(strings.ToLower(observed), strings.ToLower(value))) {
+				headersMatch = false
+				break
+			}
+		}
+		if headersMatch && signatures.MatchesFingerprint(string(body), signature) {
+			return signature.Service, signature.Fingerprint
+		}
 	}
-	return collector.resolver.ResolveAddressStatus(ctx, host)
+	return hop.Provider, ""
 }
 
-func (collector *RedirectCollector) addDanglingEvidence(analysis *core.HostAnalysis, host, target string, status core.DNSStatus, httpStatus int) {
-	metadata := map[string]string{"target_host": host, "target_url": target, "dns_status": string(status)}
-	if httpStatus != 0 {
-		metadata["http_status"] = strconv.Itoa(httpStatus)
+func (collector *RedirectCollector) redirectHop(ctx context.Context, analysis *core.HostAnalysis, index int, target *url.URL, cache map[string]core.RedirectHop) core.RedirectHop {
+	host := normalizeWebHost(target.Hostname())
+	hop := core.RedirectHop{Index: index, URL: target.String(), Hostname: host, Scheme: strings.ToLower(target.Scheme)}
+	if cached, ok := cache[host]; ok {
+		hop.DNSStatus = cached.DNSStatus
+		hop.CNAME = append([]string(nil), cached.CNAME...)
+		hop.Addresses = append([]string(nil), cached.Addresses...)
+		hop.Provider = cached.Provider
+		return hop
 	}
-	analysis.AddEvidence(core.Evidence{
-		Type: "DANGLING_REDIRECT", Source: "HTTP",
-		Description: "O destino da cadeia não possui resolução utilizável ou responde como recurso removido.",
-		Weight:      20, Confidence: 90, Metadata: metadata,
-	})
+	if sameWebHost(host, analysis.Host) {
+		hop.DNSStatus = core.DNSStatusResolved
+		hop.CNAME = append([]string(nil), analysis.DNS.CNAME...)
+		hop.Addresses = append(append([]string(nil), analysis.DNS.A...), analysis.DNS.AAAA...)
+	} else if collector.resolver != nil {
+		hop.CNAME, _ = collector.resolver.ResolveCNAMEChain(ctx, host)
+		finalHost := host
+		if len(hop.CNAME) > 0 {
+			finalHost = hop.CNAME[len(hop.CNAME)-1]
+		}
+		hop.DNSStatus = collector.resolver.ResolveAddressStatus(ctx, finalHost)
+		if resolver, ok := collector.resolver.(webAddressResolver); ok && hop.DNSStatus == core.DNSStatusResolved {
+			ipv4, _ := resolver.ResolveA(ctx, finalHost)
+			ipv6, _ := resolver.ResolveAAAA(ctx, finalHost)
+			hop.Addresses = append(ipv4, ipv6...)
+		}
+	}
+	for _, candidate := range analysis.ProviderCandidates {
+		if sameWebHost(candidate.CNAME, host) || containsWebHost(hop.CNAME, candidate.CNAME) {
+			hop.Provider = candidate.Service
+			break
+		}
+	}
+	if hop.Provider == "" {
+		for index := range collector.sigs {
+			if collector.sigs[index].Service == "" {
+				continue
+			}
+			if _, matched := matchingCNAME(append([]string{host}, hop.CNAME...), collector.sigs[index].CNames); matched {
+				hop.Provider = collector.sigs[index].Service
+				break
+			}
+		}
+	}
+	cache[host] = hop
+	return hop
 }
 
 func noRedirectClient(client *http.Client) *http.Client {
@@ -194,6 +299,15 @@ func normalizedHostSet(hosts []string) map[string]struct{} {
 
 func normalizeWebHost(host string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
+func containsWebHost(hosts []string, target string) bool {
+	for _, host := range hosts {
+		if sameWebHost(host, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func sameWebHost(left, right string) bool {

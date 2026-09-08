@@ -82,12 +82,12 @@ func RunL1Synthetic() bool {
 	for _, tc := range testCases {
 		dnsRecords, err := res.DiscoverProfile(context.Background(), tc.Host)
 		if err != nil {
-			fmt.Printf("Erro ao avaliar %s: %v\n", tc.Host, err)
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (erro DNS: %v)", tc.Host, err))
 			continue
 		}
 		analysis := &core.HostAnalysis{Host: tc.Host, DNS: dnsRecords, Classification: classification.LevelUnknown}
 		if err := registry.Run(context.Background(), analysis); err != nil {
-			fmt.Printf("Erro ao coletar evidências de %s: %v\n", tc.Host, err)
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (erro de coleta: %v)", tc.Host, err))
 			continue
 		}
 		classification.Process(analysis)

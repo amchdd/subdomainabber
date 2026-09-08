@@ -158,7 +158,7 @@ func buildVerificationRuntime(
 	if profile != nil && profile.Version >= 2 {
 		if profile.FollowRedirects {
 			redirects := evidence.NewRedirectCollector(runtimeResolver, sharedClient, profile.RedirectDepth)
-			redirects.SetAllowedHosts(profile.RelatedHosts)
+			redirects.SetSignatures(allSignatures)
 			collectors = append(collectors, redirects)
 		}
 		collectors = append(collectors, evidence.NewHTTPPostureCollector())

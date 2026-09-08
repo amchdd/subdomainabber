@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/amchdd/subdomainabber/internal/discovery"
@@ -26,14 +27,27 @@ var (
 	reconRounds             int
 	reconDepth              int
 	reconLimit              int
+	reconTestLimit          int
 	reconRecursiveThreshold int
+	reconAssetLimit         int
 	reconResume             bool
+	reconFormat             string
+	reconInclude            []string
 	reconJSON               bool
+	reconJSONL              bool
 	reconShowUnresolved     bool
+	reconShowSources        bool
+	reconShowWildcards      bool
 )
 
 type reconRunner interface {
 	Discover(context.Context, string, discovery.Options) (discovery.Result, error)
+}
+
+type reconView struct {
+	format     string
+	unresolved bool
+	wildcards  bool
 }
 
 var reconCmd = &cobra.Command{
@@ -47,9 +61,16 @@ var reconCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("configuração de execução inválida: %w", err)
 		}
+		view, err := selectReconView(command, cfg.JSONOutput)
+		if err != nil {
+			return err
+		}
 		words, err := discovery.LoadWords(reconWordlist)
 		if err != nil {
 			return err
+		}
+		if len(words) > 0 {
+			words = append(words, discovery.DefaultWords(discovery.Mode(reconMode))...)
 		}
 		engine, err := newReconEngine(cfg)
 		if err != nil {
@@ -67,7 +88,10 @@ var reconCmd = &cobra.Command{
 			MaxRounds:          reconRounds,
 			MaxDepth:           reconDepth,
 			MaxCandidates:      reconLimit,
+			MaxTested:          reconTestLimit,
 			RecursiveThreshold: reconRecursiveThreshold,
+			AssetLimit:         reconAssetLimit,
+			Progress:           reconProgress(cfg.Silent, reconDomain),
 		}, reconResume)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -81,19 +105,47 @@ var reconCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "- %s\n", reason)
 			}
 		}
-		if reconJSON || cfg.JSONOutput {
+		if view.format == "json" {
 			return json.NewEncoder(os.Stdout).Encode(result)
 		}
-		names := result.Targets()
-		if reconShowUnresolved {
-			names = result.Inventory()
+		if view.format == "jsonl" {
+			encoder := json.NewEncoder(os.Stdout)
+			for _, candidate := range result.Names {
+				if candidate.Name == result.Root || (candidate.Wildcard && !view.wildcards) || (!view.unresolved && !candidate.Resolved) {
+					continue
+				}
+				if err := encoder.Encode(candidate); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
-		for _, name := range names {
-			fmt.Println(name)
+		for _, candidate := range result.Names {
+			if candidate.Name == result.Root || (candidate.Wildcard && !view.wildcards) || (!candidate.Resolved && !view.unresolved) {
+				continue
+			}
+			if view.format != "sources" {
+				if _, err := fmt.Fprintln(os.Stdout, candidate.Name); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "%s\t%s\n", candidate.Name, strings.Join(candidate.SourceNames(), ",")); err != nil {
+				return err
+			}
 		}
 		if cfg.Verbose && !cfg.Silent {
 			unresolved := len(result.Inventory()) - len(result.Targets())
-			fmt.Fprintf(os.Stderr, "recon %s concluído: %d alvos resolvidos, %d nomes não resolvidos em %d rodada(s)\n", runID, len(result.Targets()), unresolved, result.Rounds)
+			fmt.Fprintf(
+				os.Stderr,
+				"recon %s concluído: %d alvos resolvidos, %d nomes não resolvidos, %d nomes testados e %d wildcards filtrados em %d rodada(s)\n",
+				runID,
+				len(result.Targets()),
+				unresolved,
+				result.Stats.NamesTested,
+				result.Stats.WildcardFiltered,
+				result.Rounds,
+			)
 			for _, source := range result.Sources {
 				if source.Error != "" {
 					fmt.Fprintf(os.Stderr, "fonte %s: %s\n", source.Name, source.Error)
@@ -102,6 +154,78 @@ var reconCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func selectReconView(command *cobra.Command, configJSON bool) (reconView, error) {
+	view, err := parseReconView(reconFormat, reconInclude)
+	if err != nil {
+		return reconView{}, err
+	}
+	if !command.Flags().Changed("format") {
+		switch {
+		case reconJSON || configJSON:
+			view.format = "json"
+		case reconJSONL:
+			view.format = "jsonl"
+		case reconShowSources:
+			view.format = "sources"
+		}
+	}
+	view.unresolved = view.unresolved || reconShowUnresolved
+	view.wildcards = view.wildcards || reconShowWildcards
+	return view, nil
+}
+
+func parseReconView(format string, include []string) (reconView, error) {
+	view := reconView{format: strings.ToLower(strings.TrimSpace(format))}
+	if view.format == "" {
+		view.format = "text"
+	}
+	switch view.format {
+	case "text", "sources", "json", "jsonl":
+	default:
+		return reconView{}, fmt.Errorf("formato de recon inválido %q; use text, sources, json ou jsonl", format)
+	}
+	for _, value := range include {
+		for _, item := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(item)) {
+			case "":
+				continue
+			case "unresolved":
+				view.unresolved = true
+			case "wildcards":
+				view.wildcards = true
+			case "all":
+				view.unresolved = true
+				view.wildcards = true
+			default:
+				return reconView{}, fmt.Errorf("inclusão de recon inválida %q; use unresolved, wildcards ou all", item)
+			}
+		}
+	}
+	return view, nil
+}
+
+func reconProgress(silent bool, root string) func(discovery.State) error {
+	if silent {
+		return nil
+	}
+	return func(state discovery.State) error {
+		stage := fmt.Sprintf("rodada %d", state.Checkpoint.Round)
+		if state.Checkpoint.Round == 0 {
+			stage = "coleta inicial"
+		}
+		fmt.Fprintf(
+			os.Stderr,
+			"recon %s: %s, %d nomes no catálogo, %d na fronteira e %d testados\n",
+			root,
+			stage,
+			len(state.Candidates),
+			len(state.Checkpoint.Frontier),
+			len(state.Checkpoint.Attempted),
+		)
+		return nil
+	}
 }
 
 func newReconEngine(cfg *config.Config) (*discovery.Engine, error) {
@@ -129,6 +253,9 @@ func newReconEngine(cfg *config.Config) (*discovery.Engine, error) {
 }
 
 func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, root string, options discovery.Options, resume bool) (discovery.Result, string, error) {
+	if err := discovery.ValidateOptions(options); err != nil {
+		return discovery.Result{}, "", err
+	}
 	root, err := domainutil.NormalizeHostname(root)
 	if err != nil {
 		return discovery.Result{}, "", fmt.Errorf("domínio de recon inválido: %w", err)
@@ -172,13 +299,7 @@ func runRecon(ctx context.Context, runner reconRunner, store *storage.Store, roo
 				return err
 			}
 		}
-		if err := store.SaveReconCandidates(runID, state.Candidates); err != nil {
-			return err
-		}
-		if err := store.SaveReconCheckpoint(runID, state.Checkpoint); err != nil {
-			return err
-		}
-		return store.SaveReconSources(runID, state.Sources)
+		return store.SaveReconProgress(runID, state.Candidates, state.Checkpoint, state.Sources)
 	}
 	result, err := runner.Discover(ctx, root, options)
 	if err != nil {
@@ -202,11 +323,26 @@ func init() {
 	reconCmd.Flags().StringVar(&reconMode, "mode", string(discovery.ModeExhaustive), "Modo: passive, standard ou exhaustive")
 	reconCmd.Flags().StringVarP(&reconWordlist, "wordlist", "w", "", "Wordlist adicional")
 	reconCmd.Flags().IntVarP(&reconConcurrency, "concurrency", "c", 50, "Consultas DNS simultâneas")
-	reconCmd.Flags().IntVar(&reconRounds, "max-rounds", 4, "Máximo de rodadas recursivas")
-	reconCmd.Flags().IntVar(&reconDepth, "max-depth", 5, "Profundidade máxima de labels")
-	reconCmd.Flags().IntVar(&reconLimit, "max-candidates", 250000, "Limite de nomes no catálogo")
-	reconCmd.Flags().IntVar(&reconRecursiveThreshold, "recursive-threshold", 2, "Densidade mínima para expansão recursiva")
+	reconCmd.Flags().IntVar(&reconRounds, "max-rounds", 0, "Máximo de rodadas recursivas; zero usa o padrão do modo")
+	reconCmd.Flags().IntVar(&reconDepth, "max-depth", 0, "Profundidade máxima de labels; zero usa o padrão do modo")
+	reconCmd.Flags().IntVar(&reconLimit, "max-candidates", 0, "Limite de nomes no catálogo; zero usa o padrão do modo")
+	reconCmd.Flags().IntVar(&reconTestLimit, "max-tested", 0, "Limite de nomes testados por DNS; zero usa 250000 ou 1000000 no modo exaustivo")
+	reconCmd.Flags().IntVar(&reconRecursiveThreshold, "recursive-threshold", 0, "Densidade mínima para expansão recursiva; zero usa o padrão do modo")
+	reconCmd.Flags().IntVar(&reconAssetLimit, "asset-limit", 0, "Assets da mesma origem por página; zero usa 4 ou 12 no modo exaustivo")
 	reconCmd.Flags().BoolVar(&reconResume, "resume", true, "Retomar a última execução interrompida")
+	reconCmd.Flags().StringVar(&reconFormat, "format", "text", "Formato: text, sources, json ou jsonl")
+	reconCmd.Flags().StringSliceVar(&reconInclude, "include", nil, "Incluir unresolved, wildcards ou all")
 	reconCmd.Flags().BoolVar(&reconJSON, "json", false, "Exibir resultado em JSON")
+	reconCmd.Flags().BoolVar(&reconJSONL, "jsonl", false, "Exibir um candidato JSON por linha")
 	reconCmd.Flags().BoolVar(&reconShowUnresolved, "show-unresolved", false, "Incluir nomes observados que não resolvem no momento")
+	reconCmd.Flags().BoolVar(&reconShowSources, "show-sources", false, "Acrescentar as fontes à saída textual")
+	reconCmd.Flags().BoolVar(&reconShowWildcards, "show-wildcards", false, "Incluir nomes observados que coincidem com wildcard DNS")
+	for _, name := range []string{
+		"max-rounds", "max-depth", "max-candidates", "max-tested", "recursive-threshold", "asset-limit",
+		"json", "jsonl", "show-unresolved", "show-sources", "show-wildcards",
+	} {
+		if err := reconCmd.Flags().MarkHidden(name); err != nil {
+			panic(err)
+		}
+	}
 }

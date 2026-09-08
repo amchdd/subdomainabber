@@ -183,6 +183,7 @@ func TestContextOnlyEvidenceIsInsufficientRatherThanUnknown(t *testing.T) {
 func TestWebFindingsStayMisconfigured(t *testing.T) {
 	for _, evidenceType := range []string{
 		"DANGLING_REDIRECT", "HTTPS_DOWNGRADE_REDIRECT", "CSP_DANGLING_DEPENDENCY", "DEAD_ASSET_HTTP",
+		"PLAINTEXT_WEB_CONTENT",
 	} {
 		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Weight: 20, Confidence: 90}}}
 		if got := Classify(analysis); got != LevelMisconfigured {
@@ -191,9 +192,19 @@ func TestWebFindingsStayMisconfigured(t *testing.T) {
 	}
 }
 
+func TestPlaintextSensitiveExposureIsConfirmed(t *testing.T) {
+	for _, evidenceType := range []string{"PLAINTEXT_AUTH_INTERFACE", "HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE"} {
+		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Weight: 60, Confidence: 100}}}
+		if got := Classify(analysis); got != LevelExposed || analysis.ResultState != core.ResultConfirmed {
+			t.Fatalf("%s resultou em %s/%s", evidenceType, got, analysis.ResultState)
+		}
+	}
+}
+
 func TestWebContextDoesNotCreateFinding(t *testing.T) {
 	for _, evidenceType := range []string{
 		"HTTP_REDIRECT_HOP", "REDIRECT_TARGET_OUT_OF_SCOPE", "VHOST_DIFFERENTIAL", "HTTP_WILDCARD_DETECTED",
+		"HTTP_NO_HTTPS_UPGRADE", "HTTP_BLOCKED_WITHOUT_REDIRECT", "HTTP_EDGE_BLOCK", "HTTPS_CSP_ABSENT", "HTTPS_HSTS_ABSENT",
 	} {
 		analysis := &core.HostAnalysis{Evidences: []core.Evidence{{Type: evidenceType, Confidence: 100}}}
 		if got := Classify(analysis); got != LevelInsufficientEvidence {

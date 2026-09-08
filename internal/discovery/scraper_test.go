@@ -2,6 +2,8 @@ package discovery
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -82,6 +84,92 @@ func TestDefaultScraperClientDoesNotFollowExternalRedirect(t *testing.T) {
 	}
 	if len(got) != 0 || externalCalls.Load() != 0 {
 		t.Fatalf("redirecionamento externo foi seguido: got=%#v calls=%d", got, externalCalls.Load())
+	}
+}
+
+func TestScrapePageCollectsSANEvenWhenHTTPIsBlocked(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("bloqueado")),
+			TLS: &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{
+				DNSNames: []string{"api.example.test", "fora.invalid", "*.example.test"},
+			}}},
+		}, nil
+	})}
+	names, err := ScrapePage(context.Background(), "https://example.test", "example.test", client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "api.example.test" {
+		t.Fatalf("SANs inesperados: %v", names)
+	}
+}
+
+func TestCrawlPageFollowsOnlySameOriginAssets(t *testing.T) {
+	var externalRequests atomic.Int32
+	external := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		externalRequests.Add(1)
+	}))
+	defer external.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/app.js" {
+			_, _ = writer.Write([]byte(`fetch("https://api.example.test/v1")`))
+			return
+		}
+		_, _ = writer.Write([]byte(`<script src="/app.js"></script><script src="` + external.URL + `/external.js"></script>`))
+	}))
+	defer server.Close()
+
+	references, err := crawlReferences(context.Background(), server.URL, "example.test", nil, 4, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if externalRequests.Load() != 0 {
+		t.Fatalf("asset externo foi consultado %d vez(es)", externalRequests.Load())
+	}
+	found := false
+	for _, reference := range references {
+		if reference.name == "api.example.test" && reference.method == "script" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("referência do script não encontrada: %+v", references)
+	}
+}
+
+func TestAssetRedirectOrigin(t *testing.T) {
+	var externalRequests atomic.Int32
+	external := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		externalRequests.Add(1)
+	}))
+	defer external.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/app.js":
+			http.Redirect(writer, request, "/bundle.js", http.StatusFound)
+		case "/bundle.js":
+			_, _ = writer.Write([]byte(`"https://api.example.test"`))
+		case "/external.js":
+			http.Redirect(writer, request, external.URL, http.StatusFound)
+		default:
+			_, _ = writer.Write([]byte(`<script src="/app.js"></script><script src="/external.js"></script>`))
+		}
+	}))
+	defer server.Close()
+	client := server.Client()
+	references, err := crawlReferences(context.Background(), server.URL, "example.test", nil, 4, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if externalRequests.Load() != 0 || client.CheckRedirect != nil {
+		t.Fatal("o asset saiu da origem ou alterou o cliente compartilhado")
+	}
+	if len(references) != 1 || references[0].name != "api.example.test" {
+		t.Fatalf("redirect interno não preservou a coleta: %+v", references)
 	}
 }
 

@@ -1,0 +1,9 @@
+{
+  "host": "healthy.example.test",
+  "classification": "HEALTHY",
+  "mock": {
+    "dns": {"a": ["192.0.2.1"]},
+    "http": {"status": 200, "headers": {"Server": "cloudflare"}, "body": "Página de teste disponível"},
+    "tls": {"subject": "healthy.example.test", "issuer": "CA de teste"}
+  }
+}

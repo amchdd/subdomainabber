@@ -10,7 +10,8 @@ import (
 
 // Classify aplica regras semânticas em ordem de prioridade para evitar que uma
 // pontuação isolada produza uma classificação indevida.
-func Classify(analysis *core.HostAnalysis) string {
+func Classify(analysis *core.HostAnalysis) (level string) {
+	defer func() { updateDecision(analysis, level) }()
 	has := func(evType string) bool {
 		for _, e := range analysis.Evidences {
 			if e.Type == evType {
@@ -111,7 +112,8 @@ func Classify(analysis *core.HostAnalysis) string {
 	}
 
 	// Exposições de dados ou de configurações em nuvem não comprovam takeover.
-	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") || has("ORIGIN_DIRECT_MATCH") {
+	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") || has("ORIGIN_DIRECT_MATCH") ||
+		has("PLAINTEXT_AUTH_INTERFACE") || has("HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE") {
 		return LevelExposed
 	}
 
@@ -125,7 +127,8 @@ func Classify(analysis *core.HostAnalysis) string {
 	if has("NS_REFUSED") || has("NS_SERVFAIL") || has("NS_ALL_DEAD") || has("NS_ORPHANED") || has("LAME_DELEGATION") || has("NS_SOA_MISMATCH") ||
 		has("MX_BROKEN") || has("MX_PRIMARY_BROKEN_WITH_FALLBACK") || has("MX_BACKUP_BROKEN") || has("SRV_BROKEN") || has("MX_DANGLING") || has("SRV_DANGLING") || has("DNSSEC_BOGUS") || has("SPF_BROKEN_INCLUDE") || has("SPF_DANGLING_TAKEOVER") || has("SPF_INCLUDE_WITHOUT_POLICY") || has("SPF_INCLUDE_CYCLE") || has("SPF_LOOKUP_LIMIT_EXCEEDED") ||
 		has("EMAIL_SPF_PERMISSIVE") || has("HTTP_OPEN_REDIRECT") || has("DANGLING_REDIRECT") ||
-		has("HTTP_HTTPS_REDIRECT_MISSING") || has("HTTP_HTTPS_PORT_INCONSISTENT") || has("HTTPS_DOWNGRADE_REDIRECT") ||
+		has("PLAINTEXT_WEB_CONTENT") ||
+		has("HTTP_HTTPS_PORT_INCONSISTENT") || has("HTTPS_DOWNGRADE_REDIRECT") ||
 		has("CSP_DANGLING_DEPENDENCY") || has("SUBRESOURCE_DANGLING") || has("DEAD_ASSET_REFERENCE") || has("DEAD_ASSET_HTTP") {
 		return LevelMisconfigured
 	}
@@ -180,12 +183,30 @@ func hasOnlyContextEvidence(evidences []core.Evidence) bool {
 		"HTTP_RESPONSE":                      {},
 		"HTTP_HSTS_MISSING":                  {},
 		"HTTP_CSP_MISSING":                   {},
+		"HTTPS_HSTS_ABSENT":                  {},
+		"HTTPS_HSTS_PRESENT":                 {},
+		"HTTPS_CSP_ABSENT":                   {},
+		"HTTPS_CSP_PRESENT":                  {},
+		"HTTP_NO_HTTPS_UPGRADE":              {},
+		"HTTP_HTTPS_UPGRADE_PRESENT":         {},
+		"HTTP_HTTPS_CONTENT_CORRELATED":      {},
+		"TRANSPORT_PRIORITY_SCORE":           {},
+		"HTTP_BLOCKED_WITHOUT_REDIRECT":      {},
+		"HTTP_EDGE_BLOCK":                    {},
+		"HTTP_ERROR_WITHOUT_REDIRECT":        {},
+		"RESOURCE_NOT_AVAILABLE":             {},
+		"EDGE_RESPONSE":                      {},
+		"APPLICATION_RESPONSE":               {},
+		"ACCESS_RESPONSE":                    {},
+		"ERROR_RESPONSE":                     {},
+		"REDIRECT_RESPONSE":                  {},
 		"HTTP_REDIRECT_HOP":                  {},
 		"REDIRECT_TARGET_OUT_OF_SCOPE":       {},
 		"RELATED_DOMAIN_COOKIE_SCOPE":        {},
 		"RELATED_DOMAIN_CORS_CREDENTIALS":    {},
 		"CORS_PUBLIC_WILDCARD_OBSERVED":      {},
 		"REDIRECT_DEPTH_LIMIT":               {},
+		"REDIRECT_UNSUPPORTED_PROTOCOL":      {},
 		"HTTPS_UNAVAILABLE":                  {},
 		"VHOST_DIFFERENTIAL":                 {},
 		"HTTP_WILDCARD_DETECTED":             {},

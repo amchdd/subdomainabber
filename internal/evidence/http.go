@@ -300,11 +300,20 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 			Description: fmt.Sprintf("Recebido status %d no protocolo %s", statusCode, proto),
 			Weight:      0,
 			Metadata: map[string]string{
-				"status":    fmt.Sprintf("%d", statusCode),
-				"title":     observation.Title,
-				"body_hash": observation.BodyHash,
-				"server":    observation.Server,
+				"status":        fmt.Sprintf("%d", statusCode),
+				"title":         observation.Title,
+				"content_type":  observation.ContentType,
+				"body_hash":     observation.BodyHash,
+				"body_length":   fmt.Sprintf("%d", observation.BodyLength),
+				"server":        observation.Server,
+				"location":      observation.Location,
+				"response_kind": observation.ResponseKind,
 			},
+		})
+		analysis.AddEvidence(core.Evidence{
+			Type: observation.ResponseKind, Source: proto,
+			Description: fmt.Sprintf("A resposta %s foi classificada como %s.", proto, observation.ResponseKind),
+			Weight:      0, Confidence: 95,
 		})
 
 		// 404 é um clássico indicador
@@ -313,7 +322,8 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 				Type:        "HTTP_STATUS_404",
 				Source:      proto,
 				Description: "O código de status 404 pode indicar um recurso ausente no provedor",
-				Weight:      10, // Alterado de 1 para 10.
+				Weight:      0,
+				Confidence:  100,
 			})
 		}
 

@@ -271,6 +271,7 @@ func expandPlatformAssets(ctx context.Context, runner reconRunner, store *storag
 			_ = store.CompletePlatformAsset(work.ID, "RUNNING", "")
 		}
 		rootOptions := options
+		rootOptions.Progress = reconProgress(silent, root)
 		var warnings []string
 		rootOptions.Headers, warnings = workHeaders(groups[root])
 		for _, warning := range warnings {
@@ -456,8 +457,13 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncScan, "scan", true, "Executar a varredura completa após sincronizar")
 	syncCmd.Flags().StringVar(&syncReconMode, "recon-mode", string(discovery.ModeExhaustive), "Modo de recon: passive, standard ou exhaustive")
 	syncCmd.Flags().IntVar(&syncReconConcurrency, "recon-concurrency", 50, "Consultas DNS simultâneas no recon")
-	syncCmd.Flags().IntVar(&syncReconRounds, "recon-rounds", 4, "Máximo de rodadas recursivas")
-	syncCmd.Flags().IntVar(&syncReconDepth, "recon-depth", 5, "Profundidade máxima de labels")
-	syncCmd.Flags().IntVar(&syncReconLimit, "recon-limit", 250000, "Limite de nomes por raiz")
-	syncCmd.Flags().IntVar(&syncRecursiveThreshold, "recursive-threshold", 2, "Densidade mínima para expansão recursiva")
+	syncCmd.Flags().IntVar(&syncReconRounds, "recon-rounds", 0, "Máximo de rodadas recursivas; zero usa o padrão do modo")
+	syncCmd.Flags().IntVar(&syncReconDepth, "recon-depth", 0, "Profundidade máxima de labels; zero usa o padrão do modo")
+	syncCmd.Flags().IntVar(&syncReconLimit, "recon-limit", 0, "Limite de nomes por raiz; zero usa o padrão do modo")
+	syncCmd.Flags().IntVar(&syncRecursiveThreshold, "recursive-threshold", 0, "Densidade mínima para expansão recursiva; zero usa o padrão do modo")
+	for _, name := range []string{"recon-rounds", "recon-depth", "recon-limit", "recursive-threshold"} {
+		if err := syncCmd.Flags().MarkHidden(name); err != nil {
+			panic(err)
+		}
+	}
 }
