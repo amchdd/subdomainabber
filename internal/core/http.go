@@ -6,15 +6,90 @@ type HTTPObservation struct {
 	Scheme         string              `json:"scheme"`
 	StatusCode     int                 `json:"status_code"`
 	Headers        map[string][]string `json:"headers,omitempty"`
+	RawHeaders     map[string][]string `json:"raw_headers,omitempty"`
 	Body           []byte              `json:"body,omitempty"`
 	NormalizedBody []byte              `json:"normalized_body,omitempty"`
 	BodyHash       string              `json:"body_hash,omitempty"`
+	BodyLength     int                 `json:"body_length"`
+	ContentType    string              `json:"content_type,omitempty"`
+	Location       string              `json:"location,omitempty"`
 	Title          string              `json:"title,omitempty"`
 	Server         string              `json:"server,omitempty"`
+	ResponseKind   string              `json:"response_kind,omitempty"`
+	EdgeProvider   string              `json:"edge_provider,omitempty"`
+	HTMLDocument   bool                `json:"html_document,omitempty"`
+	PasswordForm   bool                `json:"password_form,omitempty"`
+	Cookies        []HTTPCookie        `json:"cookies,omitempty"`
 	Complete       bool                `json:"complete"`
 	Duration       time.Duration       `json:"duration"`
 	TransportError string              `json:"transport_error,omitempty"`
 	ParseError     string              `json:"parse_error,omitempty"`
+}
+
+type HTTPCookie struct {
+	Name      string `json:"name"`
+	Domain    string `json:"domain,omitempty"`
+	Path      string `json:"path,omitempty"`
+	Secure    bool   `json:"secure"`
+	HTTPOnly  bool   `json:"http_only"`
+	SameSite  string `json:"same_site,omitempty"`
+	Sensitive bool   `json:"sensitive,omitempty"`
+}
+
+type HTTPCorrelation struct {
+	HTTPStatus        int      `json:"http_status,omitempty"`
+	HTTPSStatus       int      `json:"https_status,omitempty"`
+	HTTPContentType   string   `json:"http_content_type,omitempty"`
+	HTTPSContentType  string   `json:"https_content_type,omitempty"`
+	HTTPBodyHash      string   `json:"http_body_hash,omitempty"`
+	HTTPSBodyHash     string   `json:"https_body_hash,omitempty"`
+	HTTPBodyLength    int      `json:"http_body_length,omitempty"`
+	HTTPSBodyLength   int      `json:"https_body_length,omitempty"`
+	HTTPServer        string   `json:"http_server,omitempty"`
+	HTTPSServer       string   `json:"https_server,omitempty"`
+	HTTPLocation      string   `json:"http_location,omitempty"`
+	HTTPSLocation     string   `json:"https_location,omitempty"`
+	HTTPResponseKind  string   `json:"http_response_kind,omitempty"`
+	HTTPSResponseKind string   `json:"https_response_kind,omitempty"`
+	HTTPEdgeProvider  string   `json:"http_edge_provider,omitempty"`
+	HTTPSEdgeProvider string   `json:"https_edge_provider,omitempty"`
+	BodySimilarity    float64  `json:"body_similarity,omitempty"`
+	SameServer        bool     `json:"same_server,omitempty"`
+	TransportPriority int      `json:"transport_priority"`
+	TransportSignals  []string `json:"transport_signals,omitempty"`
+	ReasonCodes       []string `json:"reason_codes,omitempty"`
+}
+
+type ResultState string
+
+const (
+	ResultObservation  ResultState = "OBSERVATION"
+	ResultCandidate    ResultState = "CANDIDATE"
+	ResultConfirmed    ResultState = "CONFIRMED"
+	ResultSuppressed   ResultState = "SUPPRESSED"
+	ResultInconclusive ResultState = "INCONCLUSIVE"
+	ResultHealthy      ResultState = "HEALTHY"
+)
+
+type Inference struct {
+	Rule                     string      `json:"rule"`
+	State                    ResultState `json:"state"`
+	Finding                  string      `json:"finding,omitempty"`
+	ReasonCodes              []string    `json:"reason_codes"`
+	ObservationConfidence    int         `json:"observation_confidence"`
+	ClassificationConfidence int         `json:"classification_confidence"`
+	ImpactConfidence         int         `json:"impact_confidence"`
+	ImpactConfirmed          bool        `json:"impact_confirmed"`
+}
+
+type Decision struct {
+	State                    ResultState `json:"state"`
+	Rule                     string      `json:"rule,omitempty"`
+	ReasonCodes              []string    `json:"reason_codes,omitempty"`
+	ObservationConfidence    int         `json:"observation_confidence"`
+	ClassificationConfidence int         `json:"classification_confidence"`
+	ImpactConfidence         int         `json:"impact_confidence"`
+	ImpactConfirmed          bool        `json:"impact_confirmed"`
 }
 
 type ProviderCandidate struct {

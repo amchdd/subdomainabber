@@ -10,7 +10,8 @@ import (
 
 // Classify aplica regras semânticas em ordem de prioridade para evitar que uma
 // pontuação isolada produza uma classificação indevida.
-func Classify(analysis *core.HostAnalysis) string {
+func Classify(analysis *core.HostAnalysis) (level string) {
+	defer func() { updateDecision(analysis, level) }()
 	has := func(evType string) bool {
 		for _, e := range analysis.Evidences {
 			if e.Type == evType {
@@ -111,7 +112,8 @@ func Classify(analysis *core.HostAnalysis) string {
 	}
 
 	// Exposições de dados ou de configurações em nuvem não comprovam takeover.
-	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") {
+	if has("CLOUD_S3_LISTABLE") || has("CLOUD_S3_WRITABLE") || has("CLOUD_AZURE_BLOB_LISTABLE") || has("CLOUD_GCS_LISTABLE") || has("DNS_AXFR_ALLOWED") || has("ORIGIN_DIRECT_MATCH") ||
+		has("PLAINTEXT_AUTH_INTERFACE") || has("HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE") {
 		return LevelExposed
 	}
 
@@ -122,9 +124,12 @@ func Classify(analysis *core.HostAnalysis) string {
 
 	// Problemas estruturais de DNS, zonas, e-mail ou redirecionamento são
 	// classificados como configuração incorreta.
-	if has("NS_REFUSED") || has("NS_SERVFAIL") || has("NS_ALL_DEAD") || has("NS_ORPHANED") || has("LAME_DELEGATION") || has("MX_UNRESOLVABLE") || has("NS_SOA_MISMATCH") ||
-		has("MX_BROKEN") || has("SRV_BROKEN") || has("MX_DANGLING") || has("SRV_DANGLING") || has("SPF_BROKEN_INCLUDE") || has("SPF_DANGLING_TAKEOVER") || has("SPF_INCLUDE_WITHOUT_POLICY") || has("SPF_INCLUDE_CYCLE") || has("SPF_LOOKUP_LIMIT_EXCEEDED") ||
-		has("EMAIL_SPF_PERMISSIVE") || has("HTTP_OPEN_REDIRECT") {
+	if has("NS_REFUSED") || has("NS_SERVFAIL") || has("NS_ALL_DEAD") || has("NS_ORPHANED") || has("LAME_DELEGATION") || has("NS_SOA_MISMATCH") ||
+		has("MX_BROKEN") || has("MX_PRIMARY_BROKEN_WITH_FALLBACK") || has("MX_BACKUP_BROKEN") || has("SRV_BROKEN") || has("MX_DANGLING") || has("SRV_DANGLING") || has("DNSSEC_BOGUS") || has("SPF_BROKEN_INCLUDE") || has("SPF_DANGLING_TAKEOVER") || has("SPF_INCLUDE_WITHOUT_POLICY") || has("SPF_INCLUDE_CYCLE") || has("SPF_LOOKUP_LIMIT_EXCEEDED") ||
+		has("EMAIL_SPF_PERMISSIVE") || has("HTTP_OPEN_REDIRECT") || has("DANGLING_REDIRECT") ||
+		has("PLAINTEXT_WEB_CONTENT") ||
+		has("HTTP_HTTPS_PORT_INCONSISTENT") || has("HTTPS_DOWNGRADE_REDIRECT") ||
+		has("CSP_DANGLING_DEPENDENCY") || has("SUBRESOURCE_DANGLING") || has("DEAD_ASSET_REFERENCE") || has("DEAD_ASSET_HTTP") {
 		return LevelMisconfigured
 	}
 
@@ -155,27 +160,76 @@ func hasOnlyContextEvidence(evidences []core.Evidence) bool {
 		return false
 	}
 	contextTypes := map[string]struct{}{
-		"ASN_MATCH":                 {},
-		"CAA_RECORD_PRESENT":        {},
-		"CDN_DETECTED":              {},
-		"CLOUD_IP_CONTEXT":          {},
-		"CNAME_PROVIDER_MATCH":      {},
-		"DNSSEC_ARTIFACTS_OBSERVED": {},
-		"EMAIL_DMARC_MISSING":       {},
-		"EMAIL_SPF_MISSING":         {},
-		"HTTP_OK_ACTIVE":            {},
-		"HTTP_RESPONSE":             {},
-		"HTTP_HSTS_MISSING":         {},
-		"HTTP_CSP_MISSING":          {},
-		"MX_PROVIDER_MATCH":         {},
-		"NULL_MX_PRESENT":           {},
-		"NS_PROVIDER_MATCH":         {},
-		"NXDOMAIN_EXPECTED":         {},
-		"SRV_PROVIDER_MATCH":        {},
-		"SHADOW_IT_DETECTED":        {},
-		"TLS_PROVIDER_MATCH":        {},
-		"TLS_SAN_MATCH":             {},
-		"TXT_VERIFICATION_TOKEN":    {},
+		"ASN_MATCH":                          {},
+		"CAA_ISSUER_MISMATCH":                {},
+		"CAA_POLICY_INCONSISTENT":            {},
+		"CAA_RECORD_PRESENT":                 {},
+		"CDN_DETECTED":                       {},
+		"CLOUD_IP_CONTEXT":                   {},
+		"CNAME_CHAIN_TRACE":                  {},
+		"CNAME_PROVIDER_MATCH":               {},
+		"DNAME_ALIAS":                        {},
+		"HTTPS_BINDING":                      {},
+		"HTTPS_PROVIDER_MATCH":               {},
+		"SVCB_BINDING":                       {},
+		"SVCB_PROVIDER_MATCH":                {},
+		"DNSSEC_ARTIFACTS_OBSERVED":          {},
+		"DNS_CONSENSUS_STATE":                {},
+		"DNSSEC_SERVFAIL_INCONCLUSIVE":       {},
+		"DNSSEC_VALIDATED":                   {},
+		"EMAIL_DMARC_MISSING":                {},
+		"EMAIL_SPF_MISSING":                  {},
+		"HTTP_OK_ACTIVE":                     {},
+		"HTTP_RESPONSE":                      {},
+		"HTTP_HSTS_MISSING":                  {},
+		"HTTP_CSP_MISSING":                   {},
+		"HTTPS_HSTS_ABSENT":                  {},
+		"HTTPS_HSTS_PRESENT":                 {},
+		"HTTPS_CSP_ABSENT":                   {},
+		"HTTPS_CSP_PRESENT":                  {},
+		"HTTP_NO_HTTPS_UPGRADE":              {},
+		"HTTP_HTTPS_UPGRADE_PRESENT":         {},
+		"HTTP_HTTPS_CONTENT_CORRELATED":      {},
+		"TRANSPORT_PRIORITY_SCORE":           {},
+		"HTTP_BLOCKED_WITHOUT_REDIRECT":      {},
+		"HTTP_EDGE_BLOCK":                    {},
+		"HTTP_ERROR_WITHOUT_REDIRECT":        {},
+		"RESOURCE_NOT_AVAILABLE":             {},
+		"EDGE_RESPONSE":                      {},
+		"APPLICATION_RESPONSE":               {},
+		"ACCESS_RESPONSE":                    {},
+		"ERROR_RESPONSE":                     {},
+		"REDIRECT_RESPONSE":                  {},
+		"HTTP_REDIRECT_HOP":                  {},
+		"REDIRECT_TARGET_OUT_OF_SCOPE":       {},
+		"RELATED_DOMAIN_COOKIE_SCOPE":        {},
+		"RELATED_DOMAIN_CORS_CREDENTIALS":    {},
+		"CORS_PUBLIC_WILDCARD_OBSERVED":      {},
+		"REDIRECT_DEPTH_LIMIT":               {},
+		"REDIRECT_UNSUPPORTED_PROTOCOL":      {},
+		"HTTPS_UNAVAILABLE":                  {},
+		"VHOST_DIFFERENTIAL":                 {},
+		"HTTP_WILDCARD_DETECTED":             {},
+		"MX_PROVIDER_MATCH":                  {},
+		"MX_UNRESOLVABLE":                    {},
+		"NULL_MX_PRESENT":                    {},
+		"NS_PROVIDER_MATCH":                  {},
+		"NXDOMAIN_EXPECTED":                  {},
+		"ORIGIN_EXPOSURE_CANDIDATE":          {},
+		"ORIGIN_EXPOSURE_HINT":               {},
+		"PROVIDER_MIGRATION_DETECTED":        {},
+		"PROVIDER_MIGRATION_STALE_REFERENCE": {},
+		"SNI_CERT_MISMATCH":                  {},
+		"SRV_PROVIDER_MATCH":                 {},
+		"SRV_UNRESOLVABLE":                   {},
+		"SHADOW_IT_DETECTED":                 {},
+		"TLS_CERTIFICATE_DRIFT":              {},
+		"TLS_CERTIFICATE_OBSERVED":           {},
+		"TLS_PROVIDER_MATCH":                 {},
+		"TLS_SAN_CANDIDATE":                  {},
+		"TLS_SAN_MATCH":                      {},
+		"TXT_OWNERSHIP_TOKEN_RESIDUAL":       {},
+		"TXT_VERIFICATION_TOKEN":             {},
 	}
 	for _, evidence := range evidences {
 		if _, ok := contextTypes[evidence.Type]; !ok {

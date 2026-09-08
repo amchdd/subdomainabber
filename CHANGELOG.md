@@ -3,12 +3,34 @@
 Todas as mudanças relevantes deste projeto serão registradas neste arquivo.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) e as versões seguem [Semantic Versioning](https://semver.org/).
-Datas e links de comparação são acrescentados somente depois da publicação da tag correspondente.
+Cada lançamento possui uma seção correspondente à tag e notas de migração em `docs/releases/`.
 
 ## Não publicado
 
+## [v0.2.0] - 2026-09-08
+
+- Conjunto L3 de regressão versionado, falhas de benchmark contabilizadas e fechamento do SQLite entre casos. CI e release executam o corpus e os benchmarks locais.
+
 ### Adicionado
 
+- comando `recon` com fontes passivas, DNS A/AAAA/CNAME/MX/NS/SRV, scraping, geração recursiva, proveniência e retomada por checkpoint no SQLite;
+- fonte Common Crawl sem credenciais e suporte opcional ao SecurityTrails por `SABBER_SECURITYTRAILS_TOKEN`;
+- wordlist interna ampla, alterações contextuais, coleta de SAN, leitura de assets da mesma origem e aproveitamento dos nomes retornados por AXFR;
+- `--format` e `--include` para controlar a saída e a inspeção do inventário do recon;
+- comando `sync` para HackerOne, Intigriti e Bugcrowd, com paginação, catálogo de escopo no SQLite, expansão de wildcards, retomada e scan completo;
+- aplicação dos limites de automação, User-Agent e headers específicos importados das regras da Intigriti;
+- estágio de inferência HTTP separado dos coletores, com estados `OBSERVATION`, `CANDIDATE`, `CONFIRMED`, `SUPPRESSED`, `INCONCLUSIVE` e `HEALTHY`;
+- correlação HTTP/HTTPS com status, tipo de conteúdo, hashes, tamanhos, servidor, Location, similaridade de corpo e prioridade de transporte;
+- classificação de respostas de borda/CDN, detecção de formulário de senha e distinção entre cookies de aplicação e cookies operacionais da borda;
+- reason codes e confiança separada para observação, classificação e impacto;
+- persistência do contexto HTTP e exportação CSV dos novos campos de decisão;
+- fixtures sanitizadas para redirect HTTPS terminado em 404, bloqueio de borda 403, login por HTTP e redirect externo NXDOMAIN;
+- consenso DNS multi-resolvedor com estados de propagação, visão dividida e resultado inconclusivo;
+- coleta de DNAME, HTTPS e SVCB com preservação de parâmetros e correlação conservadora de provedor;
+- histórico de execuções, observações completas, retomada, comparação e replay local no SQLite;
+- modo `--stream` com deduplicação em disco e lotes de memória limitada;
+- corpus versionado por vetor e sinais adicionais de aprendizado para corpo, servidor, emissor TLS e domínio calculado pela Public Suffix List;
+- exportação SARIF, política `--fail-on-severity`, webhook HTTPS assinado e bundles forenses Ed25519;
 - limiar de notificação Discord por `--discord-min-severity`/`SABBER_DISCORD_MIN_SEVERITY`;
 - cores semânticas no terminal interativo, com suporte a `--no-color` e `NO_COLOR`;
 - progresso periódico com hosts processados, hosts ativos, fila do limitador de taxa, vazão e ETA;
@@ -20,8 +42,18 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Alterado
 
-- licenciamento do código original alterado de MIT para MIT com a Commons Clause License Condition v1.0; `v0.1.0-alpha` e versões anteriores permanecem sob MIT;
-- dependências Go diretas atualizadas e ambiente de execução mínimo elevado para Go 1.26.5;
+- redirects externos HTTP/HTTPS são acompanhados automaticamente e cada hop preserva URL, hostname, esquema, status, Location, DNS, CNAME, endereços e provedor;
+- `DANGLING_REDIRECT` exige falha DNS estrutural ou assinatura específica de recurso ausente no provedor; status 403, 404 e 5xx isolados não bastam;
+- ausência de upgrade HTTP vira candidato quando há conteúdo HTML e confirmação quando um formulário de autenticação ou cookie sensível é realmente exposto; bloqueios e páginas indisponíveis são suprimidos;
+- CSP só é avaliada em resposta HTTPS 2xx que contenha documento HTML, enquanto ausência de CSP e HSTS permanece como observação de hardening ou postura;
+- o resumo final separa confirmados, candidatos, observações, suprimidos, saudáveis, inconclusivos e os motivos dos resultados inconclusivos;
+- os limites de cobertura do recon passam a ser coordenados por `--mode`; os ajustes individuais e as flags antigas de saída permanecem aceitos, mas saem da ajuda básica;
+- a recursão do recon passa a usar densidade da árvore DNS, distribui os termos entre as zonas elegíveis e persiste também os nomes já testados no checkpoint;
+- nomes observados que coincidem com wildcard são preservados como metadados, sem entrar na saída acionável padrão;
+- cadeias de redirect, comparação de vhost, dependências web passivas, TLS sem SNI e descoberta passiva de SANs relacionados passam a integrar o perfil padrão;
+- consultas HTTP a assets continuam explícitas por `--related-hosts`, e o SNI alternativo continua opcional por `--check-sni`;
+- licenciamento do código original alterado de MIT para MIT com a Commons Clause License Condition v1.0; `v0.1.0` e versões anteriores permanecem sob MIT;
+- ambiente de execução mínimo elevado para Go 1.26.6, com atualização do SDK AWS, miekg/dns e SQLite e suas dependências;
 - AWS Smithy, Cobra e dependências transitivas Go atualizadas;
 - ações `checkout` e `setup-go` do GitHub Actions atualizadas para a v7;
 - workflows passam a obter a versão do Go diretamente de `go.mod` e desativam a troca automática de toolchain;
@@ -29,6 +61,7 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - atualizações das GitHub Actions são agrupadas pelo Dependabot;
 - enumeração passiva, pivotamento WHOIS e DNS ativo agora compartilham proxy, tempo limite e limitador de taxa;
 - benchmark controlado do Mutator passa a falhar também quando encontra falsos negativos;
+- benchmark sintético usa diretamente o fluxo de coleta e classificação e mantém confirmação reservada a provas de controle;
 - opções de varredura podem ser usadas diretamente no comando raiz, sem informar o subcomando `scan`;
 - achados iniciais relevantes podem ser enviados ao Discord por `--discord-webhook`;
 - a quantidade efetiva de hosts em processamento é ajustada ao limite global de taxa para evitar privação de execução e reduzir o tempo até o primeiro resultado;
@@ -42,6 +75,22 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Corrigido
 
+- permutações de hosts sem filhos e expansão de zonas intermediárias sem A/AAAA;
+- coleta web em catálogos grandes, com limite aplicado às páginas consultadas, e filtragem de wildcards antes desse limite;
+- nomes externos com prefixo semelhante ao alvo deixam de gerar candidatos no scraper;
+- evidência AXFR explícita remove a marcação de wildcard de nomes já observados;
+- o modo passivo ignora ajustes legados de rodadas e não gera nomes;
+- caminhos HTTP com caixa diferente deixam de produzir falso loop de redirects;
+- destinos HTTPS com falha DNS ou transporte deixam de ser apresentados como upgrade concluído;
+- catálogo, fronteira e fontes de recon são persistidos na mesma transação para retomada consistente;
+- saída textual com fontes percorre o catálogo uma vez e informa falhas de escrita;
+- clientes de plataforma preservam a origem nas requisições autenticadas e omitem corpos de erro que possam conter dados sensíveis;
+- isolamento do catálogo de recon por raiz, reconciliação segura de nomes antigos e separação entre inventário histórico e alvos DNS acionáveis;
+- indicação explícita de recon parcial quando fontes ou limites impedem uma atualização completa;
+- retomada de checkpoints vazios sem pular as fontes passivas e uso do limite global já durante a coleta e o scraping;
+- base correta da Researcher API da Intigriti, paginação por cursor da HackerOne e detecção de ciclos nas APIs;
+- preservação dos vínculos de plataforma durante recon parcial e substituição atômica após uma coleta completa;
+- fusão determinística de targets compartilhados entre grupos da Bugcrowd e identificação de recompensas da Intigriti;
 - configurações numéricas inválidas são rejeitadas antes da criação de limitadores, canais e rotinas concorrentes; o modo daemon exige intervalo mínimo de um minuto e a enumeração impõe limites seguros de concorrência;
 - alertas NS e tentativas agressivas são deduplicados pelo corte de zona, evitando mensagens repetidas por hosts descendentes;
 - descobertas `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` nunca são enviadas ao Discord;
@@ -89,10 +138,11 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 
 ### Segurança
 
+- divergência DNS impede que uma resposta isolada promova um CNAME a dangling;
 - a CI passa a verificar vulnerabilidades alcançáveis com `govulncheck`;
 - filtros de escopo deixam de aceitar domínios que apenas terminam com o texto do alvo.
 
-## Base da versão v0.1.0-alpha
+## Base histórica de desenvolvimento
 
 ### Adicionado
 
@@ -123,6 +173,8 @@ Datas e links de comparação são acrescentados somente depois da publicação 
 - ausência de evidência agora é `INSUFFICIENT_EVIDENCE`, não `HEALTHY`;
 - `--no-wildcard-filter` passa a desabilitar efetivamente o filtro;
 - a correspondência de NS, MX e SRV preserva os limites DNS.
+
+[v0.2.0]: https://github.com/amchdd/subdomainabber/compare/v0.1.0...v0.2.0
 
 ### Segurança
 

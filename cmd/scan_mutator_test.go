@@ -12,14 +12,27 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	previousEvasion := checkEvasion
 	previousFraming := checkFraming
 	previousAggressive := aggressive
+	previousVHost := checkVHost
+	previousWebDeps := checkWebDeps
+	previousFollow := followRedirects
+	previousSNI := checkSNI
+	previousOrigin := checkOrigin
+	previousSANPivot := pivotSAN
 	t.Cleanup(func() {
 		checkEvasion = previousEvasion
 		checkFraming = previousFraming
 		aggressive = previousAggressive
+		checkVHost = previousVHost
+		checkWebDeps = previousWebDeps
+		followRedirects = previousFollow
+		checkSNI = previousSNI
+		checkOrigin = previousOrigin
+		pivotSAN = previousSANPivot
 	})
 	checkEvasion = false
 	checkFraming = false
 	aggressive = false
+	pivotSAN = false
 
 	enableCheckAllModules()
 	if checkEvasion {
@@ -30,6 +43,27 @@ func TestCheckAllDoesNotEnableExperimentalMutator(t *testing.T) {
 	}
 	if aggressive {
 		t.Fatal("--check-all enabled real auto-claim")
+	}
+	if !checkVHost || !checkWebDeps || !followRedirects {
+		t.Fatal("--check-all não habilitou as análises HTTP seguras")
+	}
+	if pivotSAN {
+		t.Fatal("--check-all habilitou pivô SAN sem allowlist")
+	}
+	if !checkSNI || !checkOrigin {
+		t.Fatal("--check-all não habilitou as análises TLS seguras")
+	}
+}
+
+func TestDefaultHTTPAnalysisFlags(t *testing.T) {
+	for _, name := range []string{"follow-redirects", "check-vhost", "check-web-deps"} {
+		flag := scanCmd.Flags().Lookup(name)
+		if flag == nil || flag.DefValue != "true" {
+			t.Fatalf("--%s não está habilitada por padrão", name)
+		}
+	}
+	if flag := scanCmd.Flags().Lookup("check-sni"); flag == nil || flag.DefValue != "false" {
+		t.Fatal("--check-sni deve continuar opcional para a variante alternativa")
 	}
 }
 

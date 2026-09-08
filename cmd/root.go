@@ -137,6 +137,9 @@ func routeRootArgs(args []string) []string {
 }
 
 func init() {
+	cobra.AddTemplateFunc("ptFlags", func(value string) string {
+		return strings.ReplaceAll(value, "(default ", "(padrão ")
+	})
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.SetUsageTemplate(`Uso:{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
@@ -158,10 +161,10 @@ Comandos adicionais:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCo
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 Opções:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+{{.LocalFlags.FlagUsages | ptFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 Opções globais:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+{{.InheritedFlags.FlagUsages | ptFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
 Tópicos adicionais de ajuda:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
@@ -186,7 +189,7 @@ Use "{{.CommandPath}} [comando] --help" para obter mais informações sobre um c
 	rootCmd.Flags().Bool("version", false, "Exibe a versão do SubdomainAbber")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Habilitar saída verbosa e mensagens de depuração no stderr")
 	rootCmd.PersistentFlags().BoolVar(&silent, "silent", false, "Modo silencioso — suprime banner e logs, imprime apenas resultados")
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Caminho para banco SQLite de deduplicação (padrão subdomainabber.db)")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Caminho para o banco SQLite de resultados e execuções (padrão subdomainabber.db)")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Desabilitar cores ANSI na saída da CLI")
 	rootCmd.PersistentFlags().StringVar(&discordMinSeverity, "discord-min-severity", "", "Severidade mínima do Discord: info, low, medium, high ou critical")
 }

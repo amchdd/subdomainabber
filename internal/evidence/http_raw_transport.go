@@ -106,7 +106,6 @@ func (transport *NetworkHTTPRawTransport) Send(ctx context.Context, mutationCont
 		observation.Duration = time.Since(started)
 		return observation
 	}
-
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	conn, err := transport.dial(ctx, address)
 	if err != nil {

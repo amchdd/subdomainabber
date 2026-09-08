@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/amchdd/subdomainabber/internal/classification"
+	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/pkg/ratelimit"
 )
 
@@ -41,8 +43,11 @@ func (outcome domainOutcome) String() string {
 type domainResult struct {
 	Outcome        domainOutcome
 	Classification string
-	Actionable     bool
 	FatalErr       error
+	Candidates     []string
+	PolicyMatch    bool
+	ResultState    core.ResultState
+	ResultReason   string
 }
 
 type scanProgressSnapshot struct {
@@ -55,14 +60,15 @@ type scanProgressSnapshot struct {
 	Canceled        int64
 	Processed       int64
 	NotStarted      int64
-	Actionable      int64
 	Classifications map[string]int64
+	ResultStates    map[string]int64
+	ResultReasons   map[string]int64
 	Operations      ratelimit.StatsSnapshot
 	Elapsed         time.Duration
 }
 
 type scanProgress struct {
-	total            int64
+	total            atomic.Int64
 	requestedWorkers int
 	effectiveWorkers int
 	limiter          *ratelimit.Limiter
@@ -75,9 +81,10 @@ type scanProgress struct {
 	skipped          atomic.Int64
 	failed           atomic.Int64
 	canceled         atomic.Int64
-	actionable       atomic.Int64
 	classificationMu sync.Mutex
 	classifications  map[string]int64
+	resultStates     map[string]int64
+	resultReasons    map[string]int64
 	stop             chan struct{}
 	done             chan struct{}
 	startOnce        sync.Once
@@ -97,8 +104,7 @@ func newScanProgress(
 	if limiter != nil {
 		initialStats = limiter.Stats()
 	}
-	return &scanProgress{
-		total:            int64(total),
+	progress := &scanProgress{
 		requestedWorkers: requestedWorkers,
 		effectiveWorkers: effectiveWorkers,
 		limiter:          limiter,
@@ -108,8 +114,12 @@ func newScanProgress(
 		stop:             make(chan struct{}),
 		done:             make(chan struct{}),
 		classifications:  make(map[string]int64),
+		resultStates:     make(map[string]int64),
+		resultReasons:    make(map[string]int64),
 		initialGranted:   initialStats.Granted,
 	}
+	progress.total.Store(int64(total))
+	return progress
 }
 
 func (progress *scanProgress) Start() {
@@ -147,6 +157,12 @@ func (progress *scanProgress) HostStarted() {
 	progress.active.Add(1)
 }
 
+func (progress *scanProgress) AddTotal(total int) {
+	if progress != nil && total > 0 {
+		progress.total.Add(int64(total))
+	}
+}
+
 func (progress *scanProgress) HostFinished(result domainResult) {
 	progress.active.Add(-1)
 	switch result.Outcome {
@@ -159,12 +175,17 @@ func (progress *scanProgress) HostFinished(result domainResult) {
 	case domainCanceled:
 		progress.canceled.Add(1)
 	}
-	if result.Actionable {
-		progress.actionable.Add(1)
-	}
 	if result.Classification != "" {
 		progress.classificationMu.Lock()
 		progress.classifications[result.Classification]++
+		progress.classificationMu.Unlock()
+	}
+	if result.ResultState != "" {
+		progress.classificationMu.Lock()
+		progress.resultStates[string(result.ResultState)]++
+		if result.ResultReason != "" {
+			progress.resultReasons[string(result.ResultState)+"|"+result.ResultReason]++
+		}
 		progress.classificationMu.Unlock()
 	}
 }
@@ -176,7 +197,8 @@ func (progress *scanProgress) Snapshot() scanProgressSnapshot {
 	failed := progress.failed.Load()
 	canceled := progress.canceled.Load()
 	processed := completed + skipped + failed
-	notStarted := progress.total - started
+	total := progress.total.Load()
+	notStarted := total - started
 	if notStarted < 0 {
 		notStarted = 0
 	}
@@ -192,9 +214,17 @@ func (progress *scanProgress) Snapshot() scanProgressSnapshot {
 	for classification, count := range progress.classifications {
 		classifications[classification] = count
 	}
+	resultStates := make(map[string]int64, len(progress.resultStates))
+	for state, count := range progress.resultStates {
+		resultStates[state] = count
+	}
+	resultReasons := make(map[string]int64, len(progress.resultReasons))
+	for reason, count := range progress.resultReasons {
+		resultReasons[reason] = count
+	}
 	progress.classificationMu.Unlock()
 	return scanProgressSnapshot{
-		Total:           progress.total,
+		Total:           total,
 		Started:         started,
 		Active:          progress.active.Load(),
 		Completed:       completed,
@@ -203,8 +233,9 @@ func (progress *scanProgress) Snapshot() scanProgressSnapshot {
 		Canceled:        canceled,
 		Processed:       processed,
 		NotStarted:      notStarted,
-		Actionable:      progress.actionable.Load(),
 		Classifications: classifications,
+		ResultStates:    resultStates,
+		ResultReasons:   resultReasons,
 		Operations:      operations,
 		Elapsed:         time.Since(progress.startedAt),
 	}
@@ -227,10 +258,11 @@ func (progress *scanProgress) Format(snapshot scanProgressSnapshot) string {
 		rateText = fmt.Sprintf("calibrando a estimativa (%d/10 hosts)", snapshot.Processed)
 	}
 	return fmt.Sprintf(
-		"[*] Progresso: %d/%d processados | achados: %d | processamentos ativos: %s | operações: %d liberadas, %d aguardando | decorrido: %s | %s",
+		"[*] Progresso: %d/%d processados | confirmados: %d | candidatos: %d | processamentos ativos: %s | operações: %d liberadas, %d aguardando | decorrido: %s | %s",
 		snapshot.Processed,
 		snapshot.Total,
-		snapshot.Actionable,
+		snapshot.ResultStates[string(core.ResultConfirmed)],
+		snapshot.ResultStates[string(core.ResultCandidate)],
 		workerText,
 		snapshot.Operations.Granted,
 		snapshot.Operations.Waiting,
@@ -260,32 +292,43 @@ func compactDuration(duration time.Duration) string {
 }
 
 func formatScanBreakdown(snapshot scanProgressSnapshot) string {
-	var takeover, delegation, exposure, orphaned, misconfigured, healthy, inconclusive int64
-	for level, count := range snapshot.Classifications {
-		switch level {
-		case classification.LevelTakenOver, classification.LevelConfirmed,
-			classification.LevelTakeoverable, classification.LevelLikelyTakeoverable:
-			takeover += count
-		case classification.LevelZoneControlConfirmed, classification.LevelDelegationClaimabilityVerified,
-			classification.LevelDelegationTakeoverCandidate, classification.LevelDelegationBroken:
-			delegation += count
-		case classification.LevelExposed:
-			exposure += count
-		case classification.LevelOrphaned:
-			orphaned += count
-		case classification.LevelMisconfigured:
-			misconfigured += count
-		case classification.LevelHealthy:
-			healthy += count
-		default:
-			inconclusive += count
-		}
-	}
-	return fmt.Sprintf(
-		"[*] Resumo: %s decorridos | %d operações | %d hosts acionáveis | takeover: %d | delegação: %d | exposição: %d | órfãos: %d | configurações: %d | saudáveis: %d | inconclusivos: %d | ignorados: %d",
-		compactDuration(snapshot.Elapsed), snapshot.Operations.Granted, snapshot.Actionable,
-		takeover, delegation, exposure, orphaned, misconfigured, healthy, inconclusive, snapshot.Skipped,
+	confirmed := snapshot.ResultStates[string(core.ResultConfirmed)]
+	candidates := snapshot.ResultStates[string(core.ResultCandidate)]
+	observations := snapshot.ResultStates[string(core.ResultObservation)]
+	suppressed := snapshot.ResultStates[string(core.ResultSuppressed)]
+	inconclusive := snapshot.ResultStates[string(core.ResultInconclusive)]
+	healthy := snapshot.ResultStates[string(core.ResultHealthy)]
+	result := fmt.Sprintf(
+		"[*] Resumo: %s decorridos | %d operações | confirmados: %d | candidatos: %d | observações: %d | suprimidos: %d | saudáveis: %d | inconclusivos: %d | ignorados: %d",
+		compactDuration(snapshot.Elapsed), snapshot.Operations.Granted,
+		confirmed, candidates, observations, suppressed, healthy, inconclusive, snapshot.Skipped,
 	)
+	if breakdown := formatInconclusiveReasons(snapshot.ResultReasons); breakdown != "" {
+		result += "\n[*] Inconclusivos por motivo: " + breakdown
+	}
+	return result
+}
+
+func formatInconclusiveReasons(reasons map[string]int64) string {
+	labels := map[string]string{
+		"TIMEOUT": "tempo esgotado", "TLS_ERROR": "erro TLS", "DNS_SERVFAIL": "DNS SERVFAIL",
+		"CONNECTION_REFUSED": "conexão recusada", "UNSUPPORTED_PROTOCOL": "protocolo não suportado",
+		"INSUFFICIENT_EVIDENCE": "evidência insuficiente", "REDIRECT_DESTINATION_INCONCLUSIVE": "destino de redirect inconclusivo",
+	}
+	var parts []string
+	for key, count := range reasons {
+		state, reason, ok := strings.Cut(key, "|")
+		if !ok || state != string(core.ResultInconclusive) {
+			continue
+		}
+		label := labels[reason]
+		if label == "" {
+			label = strings.ToLower(strings.ReplaceAll(reason, "_", " "))
+		}
+		parts = append(parts, fmt.Sprintf("%s: %d", label, count))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, " | ")
 }
 
 func writerIsTerminal(writer io.Writer) bool {

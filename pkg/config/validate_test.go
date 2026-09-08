@@ -26,6 +26,8 @@ func TestValidateRuntimeRejectsUnsafeNumericValues(t *testing.T) {
 		{name: "tempo limite negativo", mutate: func(cfg *Config) { cfg.Timeout = -1 }, expected: "timeout"},
 		{name: "limite de taxa zero", mutate: func(cfg *Config) { cfg.RateLimit = 0 }, expected: "rate_limit"},
 		{name: "limite de taxa negativo", mutate: func(cfg *Config) { cfg.RateLimit = -1 }, expected: "rate_limit"},
+		{name: "profundidade de redirect zero", mutate: func(cfg *Config) { cfg.RedirectDepth = 0 }, expected: "redirect_depth"},
+		{name: "profundidade de redirect excessiva", mutate: func(cfg *Config) { cfg.RedirectDepth = 21 }, expected: "redirect_depth"},
 	}
 
 	for _, test := range tests {
@@ -115,6 +117,7 @@ func TestExplicitZeroInYAMLIsNotSilentlyReplacedByDefault(t *testing.T) {
 		{name: "concorrência", contents: "concurrency: 0\n", expected: "concurrency"},
 		{name: "tempo limite", contents: "timeout: 0\n", expected: "timeout"},
 		{name: "limite de taxa", contents: "rate_limit: 0\n", expected: "rate_limit"},
+		{name: "profundidade de redirect", contents: "redirect_depth: 0\n", expected: "redirect_depth"},
 	}
 
 	for _, test := range tests {

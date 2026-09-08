@@ -12,12 +12,12 @@ import (
 
 type commandContextKey struct{}
 
-func TestCLIReportsAlphaReleaseVersionWithoutGlobalSideEffects(t *testing.T) {
-	if buildinfo.Version != "v0.1.0-alpha" || rootCmd.Version != buildinfo.Version {
-		t.Fatalf("versions = buildinfo:%q cobra:%q", buildinfo.Version, rootCmd.Version)
+func TestCLIVersion(t *testing.T) {
+	if buildinfo.Version != "v0.2.0" || rootCmd.Version != buildinfo.Version {
+		t.Fatalf("versões divergentes: buildinfo=%q cobra=%q", buildinfo.Version, rootCmd.Version)
 	}
 	if rootCmd.PersistentPreRun != nil || rootCmd.PersistentPreRunE != nil {
-		t.Fatal("root command has a side-effecting persistent pre-run hook")
+		t.Fatal("comando raiz não deve executar ações no pre-run persistente")
 	}
 }
 
@@ -31,6 +31,15 @@ func TestRootHelpIsPortugueseOnlyAndDoesNotExposeLanguageFlag(t *testing.T) {
 	for _, unexpected := range []string{"Available Commands:", "Global Flags:", "--lang"} {
 		if strings.Contains(usage, unexpected) {
 			t.Fatalf("ajuda ainda contém %q:\n%s", unexpected, usage)
+		}
+	}
+}
+
+func TestHelpDefaults(t *testing.T) {
+	for _, command := range []*cobra.Command{reconCmd, syncCmd} {
+		usage := command.UsageString()
+		if strings.Contains(usage, "(default ") || !strings.Contains(usage, "(padrão ") {
+			t.Fatalf("valores padrão da ajuda não foram traduzidos: %s", usage)
 		}
 	}
 }
@@ -52,7 +61,10 @@ func TestCobraErrorsArePresentedInPortuguese(t *testing.T) {
 }
 
 func TestReleaseCLIExposesOnlyImplementedScanFlags(t *testing.T) {
-	for _, name := range []string{"evasion", "list", "discord-webhook", "aggressive", "aggressive-confirm-auto-claim", "aggressive-allowlist"} {
+	for _, name := range []string{
+		"evasion", "list", "discord-webhook", "follow-redirects", "redirect-depth", "check-vhost", "check-web-deps", "related-hosts",
+		"check-sni", "pivot-san", "san-roots", "check-origin", "origin-allowlist", "aggressive", "aggressive-confirm-auto-claim", "aggressive-allowlist",
+	} {
 		if scanCmd.Flags().Lookup(name) == nil {
 			t.Fatalf("implemented --%s flag is missing", name)
 		}

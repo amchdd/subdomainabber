@@ -191,10 +191,12 @@ func TestPassiveProvidersUseInjectedClientAndCloseBodies(t *testing.T) {
 		provider Provider
 	}{
 		{name: "crt.sh", payload: `[]`, provider: &CrtshProvider{}},
+		{name: "Common Crawl", payload: ``, provider: &CommonCrawlProvider{IndexURL: "https://index.invalid"}},
 		{name: "Wayback Machine", payload: `[["urlkey","timestamp","original"]]`, provider: &WaybackProvider{}},
 		{name: "AlienVault OTX", payload: `{}`, provider: &AlienVaultProvider{}},
 		{name: "CertSpotter", payload: `[]`, provider: &CertSpotterProvider{}},
 		{name: "urlscan.io", payload: `{"results":[],"has_more":false}`, provider: &URLScanProvider{}},
+		{name: "SecurityTrails", payload: `{"subdomains":[]}`, provider: &SecurityTrailsProvider{Token: "segredo", BaseURL: "https://securitytrails.invalid/v1"}},
 	}
 
 	for _, test := range tests {
@@ -211,6 +213,8 @@ func TestPassiveProvidersUseInjectedClientAndCloseBodies(t *testing.T) {
 			switch provider := test.provider.(type) {
 			case *CrtshProvider:
 				provider.Client = client
+			case *CommonCrawlProvider:
+				provider.Client = client
 			case *WaybackProvider:
 				provider.Client = client
 			case *AlienVaultProvider:
@@ -218,6 +222,8 @@ func TestPassiveProvidersUseInjectedClientAndCloseBodies(t *testing.T) {
 			case *CertSpotterProvider:
 				provider.Client = client
 			case *URLScanProvider:
+				provider.Client = client
+			case *SecurityTrailsProvider:
 				provider.Client = client
 			}
 

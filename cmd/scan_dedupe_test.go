@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/amchdd/subdomainabber/internal/classification"
+	"github.com/amchdd/subdomainabber/internal/core"
 )
 
 func TestScanFindingDeduperAllowsOneFindingPerZone(t *testing.T) {
@@ -32,18 +33,14 @@ func TestScanFindingDeduperAllowsOneFindingPerZone(t *testing.T) {
 	}
 }
 
-func TestHumanDefaultTreatsHealthyAndInconclusiveAsNonActionable(t *testing.T) {
-	for _, level := range []string{
-		classification.LevelHealthy,
-		classification.LevelUnknown,
-		classification.LevelInsufficientEvidence,
-	} {
-		if isActionableClassification(level) {
-			t.Fatalf("%s was considered actionable", level)
+func TestResultStatesDefineActionability(t *testing.T) {
+	for _, state := range []core.ResultState{core.ResultObservation, core.ResultSuppressed, core.ResultInconclusive, core.ResultHealthy} {
+		if isPrioritizedResult(state) {
+			t.Fatalf("estado %s foi tratado como resultado priorizado", state)
 		}
 	}
-	if !isActionableClassification(classification.LevelLikelyTakeoverable) {
-		t.Fatal("likely takeover was suppressed")
+	if !isPrioritizedResult(core.ResultCandidate) || !isPrioritizedResult(core.ResultConfirmed) {
+		t.Fatal("resultado priorizado foi suprimido")
 	}
 }
 

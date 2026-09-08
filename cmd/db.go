@@ -119,7 +119,7 @@ var (
 
 var exportCmd = &cobra.Command{
 	Use:   "export",
-	Short: "Exporta os dados do banco para JSON ou CSV",
+	Short: "Exporta os dados do banco para JSON, CSV ou SARIF",
 	RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 		cfg, err := loadCommandConfigWithError()
 		if err != nil {
@@ -166,8 +166,10 @@ var exportCmd = &cobra.Command{
 			exporter = export.NewJSONExporter(exportOut)
 		case "csv":
 			exporter = export.NewCSVExporter(exportOut)
+		case "sarif":
+			exporter = export.NewSARIFExporter(exportOut)
 		default:
-			return fmt.Errorf("formato de exportação %q não suportado; use json ou csv", exportFormat)
+			return fmt.Errorf("formato de exportação %q não suportado; use json, csv ou sarif", exportFormat)
 		}
 
 		if err := exporter.Export(cmd.Context(), hosts); err != nil {
@@ -184,7 +186,7 @@ func init() {
 
 	statsCmd.Flags().BoolVar(&statsJSON, "json", false, "Saída em formato JSON")
 
-	exportCmd.Flags().StringVarP(&exportFormat, "format", "f", "json", "Formato de exportação (json, csv)")
+	exportCmd.Flags().StringVarP(&exportFormat, "format", "f", "json", "Formato de exportação (json, csv, sarif)")
 	exportCmd.Flags().StringVarP(&exportOut, "out", "o", "", "Arquivo de saída (por padrão, usa stdout)")
 	exportCmd.Flags().StringVar(&exportClass, "classification", "", "Filtrar por classificação")
 	exportCmd.Flags().BoolVar(&exportOnlyRisky, "only-risky", false, "Exportar apenas vulneráveis ou problemáticos")

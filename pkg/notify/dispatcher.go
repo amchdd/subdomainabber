@@ -20,6 +20,8 @@ type DispatcherConfig struct {
 	DiscordWebhook  string
 	TelegramConfig  string
 	MinimumSeverity string
+	WebhookURL      string
+	WebhookSecret   string
 }
 
 type Dispatcher struct {
@@ -40,8 +42,7 @@ func NewDispatcher(workers int) *Dispatcher {
 	return dispatcher
 }
 
-// NewDispatcherWithConfig preserva a API pública do alpha. Novos chamadores
-// devem usar NewDispatcherWithOptions para configurar o filtro de severidade.
+// NewDispatcherWithConfig mantém compatibilidade com chamadas sem filtro de severidade.
 func NewDispatcherWithConfig(workers int, discordWebhook, telegramConfig string) (*Dispatcher, error) {
 	return NewDispatcherWithOptions(DispatcherConfig{
 		Workers: workers, DiscordWebhook: discordWebhook, TelegramConfig: telegramConfig,
@@ -72,6 +73,13 @@ func NewDispatcherWithOptions(options DispatcherConfig) (*Dispatcher, error) {
 	}
 	if telegram != nil {
 		notifiers = append(notifiers, telegram)
+	}
+	if options.WebhookURL != "" {
+		webhook, webhookErr := NewWebhookNotifier(options.WebhookURL, options.WebhookSecret)
+		if webhookErr != nil {
+			return nil, webhookErr
+		}
+		notifiers = append(notifiers, webhook)
 	}
 	if options.Workers < 1 {
 		options.Workers = 1
@@ -161,6 +169,9 @@ func (dispatcher *Dispatcher) Dispatch(result *verify.Result) {
 
 func (dispatcher *Dispatcher) DispatchAnalysis(analysis *core.HostAnalysis) {
 	if analysis == nil {
+		return
+	}
+	if analysis.ResultState != "" && analysis.ResultState != core.ResultCandidate && analysis.ResultState != core.ResultConfirmed {
 		return
 	}
 	dispatcher.Dispatch(&verify.Result{

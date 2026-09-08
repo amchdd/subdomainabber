@@ -24,6 +24,8 @@ jobs:
       CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -50,6 +52,17 @@ jobs:
           fi
       - name: Verificar módulos
         run: go mod verify
+      - name: Conferir origem e metadados da versão
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor HEAD origin/main
+          actual="$(go run . --version)"
+          test "${actual}" = "${GITHUB_REF_NAME}"
+          grep -Fq "## [${GITHUB_REF_NAME}] - " CHANGELOG.md
+          test -s "docs/releases/${GITHUB_REF_NAME}.md"
+      - name: Validar workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml
       - name: Verificar formatação
         shell: bash
         run: |
@@ -71,6 +84,7 @@ jobs:
           go run . fingerprints validate --strict
           go run . benchmark synthetic
           go run . benchmark regression datasets/regression
+          go run . benchmark corpus
           go run . benchmark mutator
 
   build:
@@ -121,7 +135,9 @@ jobs:
             -trimpath \
             -ldflags="-s -w -X github.com/amchdd/subdomainabber/internal/buildinfo.Version=${version}" \
             -o "package/${binary}" .
-          cp .env.example CHANGELOG.md LICENSE README.md SECURITY.md THIRD_PARTY_NOTICES.md config.example.yaml package/
+          cp .env.example CHANGELOG.md LICENSE LICENSING.md README.md SECURITY.md THIRD_PARTY_NOTICES.md config.example.yaml package/
+          cp -r docs package/
+          cp -r datasets package/
 
           if [[ "${GOOS}/${GOARCH}" == "linux/amd64" ]]; then
             actual="$(package/${binary} --version)"
@@ -149,6 +165,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Baixar pacotes
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -175,6 +192,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
-            --generate-notes \
+            --notes-file "docs/releases/${GITHUB_REF_NAME}.md" \
             "${release_flags[@]}" \
             --title "SubdomainAbber ${GITHUB_REF_NAME}"

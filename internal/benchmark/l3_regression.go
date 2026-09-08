@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/internal/dns"
@@ -23,7 +24,11 @@ func RunL3Regression(datasetPath string) bool {
 	matrix := &Matrix{}
 
 	allSignatures := signatures.MergeSignatures(signatures.BuiltinNSSignatures())
-	embeddedSigs, _ := signatures.LoadEmbedded()
+	embeddedSigs, err := signatures.LoadEmbedded()
+	if err != nil {
+		fmt.Printf("Erro ao carregar assinaturas: %v\n", err)
+		return false
+	}
 
 	// Adiciona a Heroku ao cenário quando ela não estiver no catálogo carregado.
 	embeddedSigs = append(embeddedSigs, signatures.Fingerprint{
@@ -34,20 +39,25 @@ func RunL3Regression(datasetPath string) bool {
 
 	allSignatures = append(allSignatures, embeddedSigs...)
 
-	// Percorre os arquivos JSON do conjunto de dados.
 	var testCases []TestCase
-	err := filepath.Walk(datasetPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(datasetPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() && filepath.Ext(path) == ".json" {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return nil
+				return err
 			}
 			var entry TestCase
 			if err := json.Unmarshal(data, &entry); err != nil {
-				return nil
+				return fmt.Errorf("interpretando %s: %w", path, err)
+			}
+			if entry.Host == "" || entry.Classification == "" {
+				return fmt.Errorf("caso incompleto em %s", path)
+			}
+			if entry.Mock != nil && entry.Mock.HTTP != nil && (entry.Mock.HTTP.Status < 100 || entry.Mock.HTTP.Status > 599) {
+				return fmt.Errorf("status HTTP inválido em %s", path)
 			}
 			testCases = append(testCases, entry)
 		}
@@ -67,7 +77,6 @@ func RunL3Regression(datasetPath string) bool {
 	for _, tc := range testCases {
 		matrix.TotalRuns++
 
-		// Configura o servidor simulado para o caso atual.
 		mock := NewMockServer()
 		if tc.Mock != nil {
 			if tc.Mock.DNS != nil {
@@ -89,7 +98,6 @@ func RunL3Regression(datasetPath string) bool {
 					for _, mx := range tc.Mock.DNS.MX {
 						mock.SetMX(tc.Host, mx)
 					}
-					// Mantém o conteúdo TXT literal.
 					for _, txt := range tc.Mock.DNS.TXT {
 						mock.SetTXT(tc.Host, txt)
 					}
@@ -124,12 +132,12 @@ func RunL3Regression(datasetPath string) bool {
 		txtCollector := evidence.NewTXTCollector(allSignatures)
 		srvCollector := evidence.NewSRVCollector(res, allSignatures)
 
-		tlsCollector := evidence.NewTLSCollector(allSignatures, 2)
+		tlsCollector := evidence.NewTLSCollector(allSignatures, 2*time.Second)
 		tlsCollector.SetDialer(mock.TLSDialer())
 
 		ipCollector := evidence.NewIPCollector(res, allSignatures)
 
-		httpCollector := evidence.NewHTTPCollector(allSignatures, 2, "", false, "", false)
+		httpCollector := evidence.NewHTTPCollector(allSignatures, 2*time.Second, "", false, "", false)
 		httpCollector.SetTransport(mock.RoundTripper())
 
 		registry := evidence.NewRegistry([]evidence.Collector{
@@ -139,34 +147,50 @@ func RunL3Regression(datasetPath string) bool {
 		verifierEngine := verifiers.NewEngine(verifiers.Config{
 			Client: &http.Client{Transport: mock.RoundTripper()},
 		})
-		db, _ := storage.New(":memory:")
+		db, err := storage.New(":memory:")
+		if err != nil {
+			mock.Stop()
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (erro no banco: %v)", tc.Host, err))
+			continue
+		}
 
 		engine := verify.NewEngine(res, registry, verifierEngine, db)
 
 		hist := &core.HostAnalysis{
 			Host:           tc.Host,
 			Classification: "HEALTHY",
+			TestedVectors:  []string{"DNS", "NS_DELEGATION", "MX", "TXT", "SRV", "A_AAAA_ASN", "HTTP"},
+		}
+		if tc.Mock != nil && tc.Mock.DNS != nil && !tc.Mock.DNS.NXDOMAIN && len(tc.Mock.DNS.A)+len(tc.Mock.DNS.AAAA) > 0 {
+			hist.TestedVectors = append(hist.TestedVectors, "TLS", "SNI", "TLS_SAN_DISCOVERY")
 		}
 
 		result, err := engine.Verify(context.Background(), hist)
 
 		mock.Stop()
+		closeErr := db.Close()
 
 		if err != nil {
-			fmt.Printf("Erro ao verificar %s: %v\n", tc.Host, err)
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (erro de verificação: %v)", tc.Host, err))
+			continue
+		}
+		if closeErr != nil {
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (erro ao fechar banco: %v)", tc.Host, closeErr))
+			continue
+		}
+		if result.State == verify.Incomplete {
+			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (revalidação incompleta: %s; ausentes=%v inesperados=%v)", tc.Host, result.Reason, result.MissingVectors, result.UnexpectedVectors))
 			continue
 		}
 
 		class := result.NewAnalysis.Classification
 
-		// Valida a cobertura quando o caso define um valor esperado.
 		cov := result.NewAnalysis.CoverageScore
 		if tc.ExpectedCoverage > 0 && cov != float64(tc.ExpectedCoverage) {
 			matrix.FailedCases = append(matrix.FailedCases, fmt.Sprintf("%s (cobertura esperada: %d, obtida: %.2f)", tc.Host, tc.ExpectedCoverage, cov))
 			continue
 		}
 
-		// Atualiza a matriz de confusão.
 		if class == string(tc.Classification) {
 			if isTakeoverSignal(class) {
 				matrix.TakeoverTP++

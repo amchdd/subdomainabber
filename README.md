@@ -1,40 +1,46 @@
 # Subdomainabber
 
-[![Version](https://img.shields.io/badge/version-v0.1.0--alpha-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.2.0-blue)](CHANGELOG.md)
 [![Go CI](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml/badge.svg)](https://github.com/amchdd/subdomainabber/actions/workflows/ci.yml)
 [![License: MIT + Commons Clause](https://img.shields.io/badge/license-MIT%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
 
 Subdomainabber é uma ferramenta de varredura em Go para investigar possíveis casos de takeover de subdomínio em programas de bug bounty e avaliações de segurança autorizadas. Ela correlaciona DNS, HTTP e TLS, registra evidências reproduzíveis e mantém um histórico local em SQLite.
 
-> **Versão alpha:** `v0.1.0-alpha` ainda pode alterar opções de linha de comando, o formato do banco e os critérios de classificação. Todo resultado exige validação manual antes de ser relatado.
+A versão `v0.2.0` reúne recon nativo, sincronização de plataformas e inferência HTTP revisada. Consulte as [notas da versão](docs/releases/v0.2.0.md) para instalação, migração e limitações.
 
 ## Uso autorizado
 
 Execute somente contra domínios incluídos no escopo do programa ou para os quais você possui autorização explícita. Respeite limites de taxa, janelas de teste e regras sobre automação.
 
-O modo padrão **não reivindica nem cria recursos**. Nesta versão alpha, os únicos adaptadores de validação ativa disponíveis são os do Amazon S3 e do Amazon Route 53. O uso por meio de `--aggressive` exige confirmação adicional, lista de permissões exata e credenciais de escrita. Uma classificação de risco não comprova explorabilidade nem autoriza essa operação.
+O modo padrão **não reivindica nem cria recursos**. Os adaptadores de validação ativa disponíveis são os do Amazon S3 e do Amazon Route 53. O uso por meio de `--aggressive` exige confirmação adicional, lista de permissões exata e credenciais de escrita. Uma classificação de risco não comprova explorabilidade nem autoriza essa operação.
 
 ## O que a ferramenta faz
 
-- coleta e correlaciona CNAME, delegação NS, MX, SRV, TXT/SPF, A/AAAA, HTTP e TLS;
+- coleta e correlaciona CNAME, DNAME, HTTPS/SVCB, delegação NS, MX, SRV, TXT/SPF, A/AAAA, HTTP e TLS;
+- compara respostas de vários resolvedores para distinguir consenso, propagação, visão dividida e resultado inconclusivo;
 - vincula assinaturas HTTP específicas ao provedor e ao CNAME observados;
 - separa takeover, exposição, configuração quebrada e candidatos que ainda exigem prova de reivindicabilidade;
-- armazena resultados e instantâneos em SQLite para revalidação posterior;
-- oferece saída em texto, JSON Lines e modos de explicação;
+- armazena execuções e observações completas em SQLite para retomada, comparação e replay local;
+- oferece saída em texto, JSON Lines, SARIF e bundles forenses assinados;
 - roteia verificadores ativos somente para provedores e CNAMEs compatíveis;
 - permite módulos ativos opcionais para exposição em nuvem, AXFR, redirecionamentos e outras verificações;
+- analisa por padrão cadeias de redirect, postura HTTP→HTTPS, vhosts, TLS sem SNI, SANs relacionados e dependências web; a confirmação direta de origin continua opcional;
+- correlaciona HTTP e HTTPS antes de concluir exposição, separando observação, candidato, confirmação, supressão e resultado inconclusivo;
+- correlaciona histórico de certificados e provedores, CAA, DNSSEC, cookies, CORS e tokens TXT residuais;
 - inclui sondas de evasão HTTP de requisição única e um laboratório separado de framing;
 - oferece reivindicações reais e auditáveis para o Amazon S3 e o Amazon Route 53 no modo agressivo, com prova de controle e tentativa imediata de liberação.
+- sincroniza programas e escopos acessíveis no HackerOne, Intigriti e Bugcrowd, expande os ativos DNS com recon nativo e mantém o catálogo local para novas varreduras.
 
 ### Maturidade dos vetores
 
 | Vetor | Tratamento atual |
 |---|---|
 | CNAME | vínculo com o provedor, assinatura HTTP, TLS, verificadores e Mutator |
+| DNAME/HTTPS/SVCB | preserva aliases, prioridades e parâmetros; a correlação com provedor usa assinaturas DNS existentes e não comprova reivindicabilidade |
 | NS | corte de zona autoritativo, visão da zona pai, registros de cola (glue) e DS; Amazon Route 53 pode provar controle por reivindicação temporária autorizada |
-| MX | relata destino quebrado e contexto do provedor; registrabilidade e controle de entrega permanecem não verificados |
-| SRV | preserva nome, prioridade, peso, porta e destino, além de oferecer enumeração controlada por `--check-srv` |
-| TXT/SPF | observa tokens TXT sem declarar obsolescência; SPF mantém a cadeia e usa o RCODE DNS real |
+| MX | segue CNAME, considera prioridade e alternativas saudáveis; registrabilidade e controle de entrega permanecem não verificados |
+| SRV | preserva nome, prioridade, peso e porta, segue CNAME e oferece enumeração controlada por `--check-srv` |
+| TXT/SPF | classifica tokens possivelmente residuais sem afirmar exploração; SPF mantém a cadeia e usa o RCODE DNS real |
 | A/AAAA | correlaciona ASN e provedor de nuvem e produz somente um candidato para revisão quando há sinais adicionais; portas fechadas não provam IP desalocado |
 | AXFR | tratado como exposição de informação, nunca como controle da zona |
 
@@ -69,9 +75,22 @@ A saída humana lista todos os achados do host e coloca primeiro aquele com maio
 
 `[CONTROLE CONFIRMADO]`, `[CONTROLE DO RECURSO COMPROVADO]` e `[CONTROLE DA ZONA CONFIRMADO]` são reservados a uma prova ativa estruturada. Rótulos de quebra, revisão, recurso órfão e takeover provável continuam sendo achados de investigação.
 
+Cada análise também possui um estado de resultado independente da classificação histórica:
+
+- `OBSERVATION`: fato útil, sem resultado priorizado;
+- `CANDIDATE`: há evidência suficiente para priorizar validação;
+- `CONFIRMED`: o impacto foi observado ou comprovado;
+- `SUPPRESSED`: a observação é verdadeira, mas uma regra contextual descartou exposição;
+- `INCONCLUSIVE`: a coleta não sustentou uma conclusão;
+- `HEALTHY`: a postura avaliada apresentou o comportamento esperado.
+
+Para HTTP, a saída estruturada separa confiança da observação, da classificação e do impacto. `http_correlation` preserva status, tipo de conteúdo, hashes, tamanhos, servidores, Locations, similaridade e prioridade de transporte. A pontuação de prioridade serve somente para ordenar validações; ela não altera severidade ou CVSS.
+
 ## Requisitos e instalação
 
-- Go 1.26.5 ou superior.
+- Go 1.26.6 ou superior para compilar; os binários da release não exigem Go instalado.
+
+Os pacotes para Linux, Windows e macOS, em amd64 e arm64, estão na [página de releases](https://github.com/amchdd/subdomainabber/releases). Extraia o pacote da sua plataforma e confira seu SHA-256 com o arquivo `SHA256SUMS` da mesma release.
 
 Para instalar pelo módulo Go:
 
@@ -102,7 +121,7 @@ Confirme o executável:
 
 ```bash
 subdomainabber --version
-# v0.1.0-alpha
+# v0.2.0
 ```
 
 ## Uso rápido
@@ -128,13 +147,85 @@ subdomainabber scan -l hosts.txt --json --silent
 
 # Explicação da classificação
 subdomainabber scan -l hosts.txt --explain
+
+# Lista extensa com memória limitada e checkpoint no SQLite
+subdomainabber scan -l hosts.txt --stream --batch-size 1000
+
+# Consenso DNS entre vários resolvedores
+subdomainabber scan -l hosts.txt --dns-consensus
+
+# Política de saída para CI
+subdomainabber scan -l hosts.txt --fail-on-severity high
 ```
+
+### Recon nativo
+
+`recon` cria um inventário de subdomínios sem invocar Subfinder, Amass ou qualquer outro executável. A coleta, a resolução, as alterações e a persistência são implementadas no próprio binário. As fontes online continuam opcionais e fornecem dados passivos; a cobertura DNS ativa funciona sem credenciais externas.
+
+O motor consulta crt.sh, Common Crawl, Wayback Machine, AlienVault OTX, CertSpotter e URLScan. Com `SABBER_SECURITYTRAILS_TOKEN`, acrescenta SecurityTrails. Depois correlaciona A, AAAA, CNAME, MX, NS e SRV, tenta aproveitar AXFR no modo exaustivo, extrai SANs TLS e referências em HTML, JavaScript, CSS, JSON e source maps da mesma origem.
+
+A wordlist interna inclui serviços, ambientes, infraestrutura e regiões. O modo exaustivo permuta prefixos e sufixos, insere termos entre labels, troca ambientes e regiões observados, explora sequências numéricas e aprende labels já encontrados. A recursão ocorre em zonas com a densidade configurada, distribuindo cada termo entre todas as zonas elegíveis antes de avançar. Cada nome mantém suas origens e o resultado de DNS no SQLite.
+
+```bash
+# Cobertura ampla com os limites padrão
+subdomainabber --db programa.db recon -d example.com
+
+# Coleta passiva, sem geração ativa de nomes
+subdomainabber --db programa.db recon -d example.com --mode passive
+
+# Wordlist própria complementando as permutações internas
+subdomainabber --db programa.db recon -d example.com --wordlist palavras.txt
+
+# Proveniência em texto ou um candidato estruturado por linha
+subdomainabber --db programa.db recon -d example.com --format sources
+subdomainabber --db programa.db recon -d example.com --format jsonl
+
+# Inventário observado, incluindo nomes sem resolução e coincidências de wildcard
+subdomainabber --db programa.db recon -d example.com --include all
+```
+
+O modo padrão do comando é `exhaustive`. Ele coordena rodadas, profundidade, volume de candidatos, consultas DNS, recursão e leitura de assets. `standard` usa um orçamento menor e `passive` não gera candidatos. Uma wordlist informada complementa a lista interna. Os ajustes individuais anteriores continuam aceitos para compatibilidade, mas não aparecem na ajuda básica.
+
+A detecção de wildcard é feita em cada nível da árvore DNS, e nomes que resolvem somente por IPv6 são preservados. Nomes observados em fontes, páginas ou certificados que coincidam com wildcard permanecem no JSON com `wildcard: true`, mas ficam fora da saída acionável. Use `--include wildcards` para inspecioná-los.
+
+O progresso salva ao fim de cada rodada o catálogo, a fronteira e os nomes já testados. Uma interrupção pode ser retomada pelo mesmo comando, pois `--resume` fica ativo por padrão. Use `--resume=false` para iniciar outra execução.
+
+A saída textual contém somente subdomínios que resolveram por A, AAAA ou CNAME e pode ser usada diretamente em pipes. `--format` seleciona `text`, `sources`, `json` ou `jsonl`. Nomes históricos que não resolvem continuam preservados no inventário e no JSON; use `--include unresolved` para incluí-los na saída textual ou JSON Lines. Quando uma fonte falha ou algum limite é atingido, o comando marca o resultado como parcial, informa o motivo no `stderr` e mantém ativos os nomes do catálogo anterior.
+
+### Sincronização de plataformas
+
+`sync` consulta todos os programas visíveis pelas credenciais configuradas, importa os escopos paginados, expande os wildcards com o recon nativo e executa uma varredura com o perfil completo. URLs e domínios exatos entram diretamente, sem ampliar o escopo. Programas, ativos, vínculos e checkpoints ficam no mesmo SQLite usado pelo restante da ferramenta.
+
+```bash
+export SABBER_HACKERONE_USERNAME="usuario-api"
+export SABBER_HACKERONE_TOKEN="token-api"
+export SABBER_INTIGRITI_TOKEN="token-pesquisador"
+export SABBER_BUGCROWD_TOKEN="usuario:segredo"
+
+# Sincronização pesada: catálogo, recon exaustivo e scan completo
+subdomainabber --db bounty.db sync
+
+# Uma plataforma específica
+subdomainabber --db bounty.db sync --platform hackerone
+
+# Atualiza o catálogo e expande somente escopos novos ou alterados
+subdomainabber --db bounty.db sync --incremental --scan=false
+
+# Revalida depois os hosts já analisados, sem repetir o sync pesado
+subdomainabber --db bounty.db verify
+```
+
+Sem `--platform`, são usadas todas as plataformas que possuem credenciais. HackerOne usa a Hacker API e os `structured_scopes`; Intigriti usa a Researcher API e os domínios versionados; Bugcrowd usa a API autenticada de programas, briefs, grupos e targets. Na Bugcrowd, a credencial tem o formato `usuario:segredo` exibido ao criar o token.
+
+O catálogo só envia ao recon e ao scan os ativos marcados como elegíveis ou pertencentes a grupos `in_scope`. Limites de automação positivos da Intigriti reduzem o limitador global quando forem mais restritivos. User-Agent e headers de identificação retornados nas regras do programa são aplicados por hostname às requisições HTTP. Se requisitos de programas diferentes entrarem em conflito no mesmo hostname, a CLI informa o conflito no `stderr`.
+
+Durante a sincronização, o `stderr` informa a etapa atual, cada raiz de recon e a quantidade final de alvos; resultados e achados continuam no `stdout`. Se alguma fonte falhar ou um limite truncar a descoberta, a execução termina como `PARTIAL`, registra os motivos no SQLite e preserva os vínculos obtidos em sincronizações anteriores. Uma coleta completa substitui esses vínculos de forma atômica. As chamadas oficiais respeitam os limites documentados de 50 requisições por minuto da HackerOne e 60 da Bugcrowd, além do limitador global configurado.
 
 Por padrão, a ferramenta aceita até 50 hosts em processamento simultâneo, tempo limite de rede de 5 segundos por operação e limite global de 10 operações por segundo. Quando o limite de taxa está ativo, a quantidade efetiva de hosts em processamento é limitada ao menor valor entre `--concurrency` e `--rl`; portanto, `--concurrency 50 --rl 10` executa dez hosts simultaneamente e evita que algum host fique indefinidamente sem oportunidade de execução. O tempo aguardando uma permissão do limitador não consome o tempo limite de rede.
 
 Os valores finais de concorrência, tempo limite e taxa precisam ser positivos. Nas opções de `scan`, zero apenas mantém o valor seguro da configuração ou o padrão; ele não desabilita o limitador. O modo `--daemon` aceita intervalos a partir de um minuto, e `enum --concurrency` aceita valores entre 1 e 1000.
 
-Em terminal interativo — ou sempre com `--verbose` — o progresso inicial é exibido imediatamente em `stderr` e atualizado a cada dez segundos, com hosts processados, achados, hosts ativos, operações concedidas ou aguardando, tempo decorrido, velocidade e previsão de término (ETA). A previsão fica em calibração até dez hosts terminarem para evitar estimativas iniciais enganosas. Resultados e JSON Lines continuam em `stdout`.
+Em terminal interativo — ou sempre com `--verbose` — o progresso inicial é exibido imediatamente em `stderr` e atualizado a cada dez segundos, com hosts processados, confirmados, candidatos, hosts ativos, operações concedidas ou aguardando, tempo decorrido, velocidade e previsão de término (ETA). O resumo final também separa observações, suprimidos, saudáveis e inconclusivos por motivo. A previsão fica em calibração até dez hosts terminarem para evitar estimativas iniciais enganosas. Resultados e JSON Lines continuam em `stdout`.
 
 Ajuste os limites às regras do programa:
 
@@ -146,7 +237,7 @@ subdomainabber scan -l hosts.txt --concurrency 10 --timeout 8 --rl 5
 
 ## Módulos ativos e níveis de risco
 
-As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização concedida pelo programa.
+Cadeias de redirect, comparação de vhost, dependências web passivas, TLS sem SNI e descoberta passiva de SANs fazem parte da análise padrão. As opções booleanas padrão aceitam `=false`. Destinos HTTP/HTTPS publicados em `Location` são acompanhados automaticamente; `--related-hosts` continua controlando somente a consulta adicional de assets e dependências web.
 
 | Opção | Comportamento |
 |---|---|
@@ -154,14 +245,25 @@ As flags abaixo geram tráfego adicional. Elas nunca ampliam a autorização con
 | `--check-ns` | Ativa o catálogo de NS orientado a provedores; o modo passivo gera um candidato e `--aggressive` pode provar Amazon Route 53 por correspondência exata. |
 | `--check-srv [--srv-owners ...]` | Enumera nomes comuns (`_sip._tcp`, `_autodiscover._tcp` etc.) uma vez por domínio registrável ou usa uma lista controlada. Nomes SRV recebidos diretamente também são analisados. |
 | `--srv-exhaustive` | Com `--check-srv`, repete a enumeração em cada nome de host. É mais lento e só deve ser usado quando o escopo realmente possui zonas SRV em subdomínios arbitrários. |
+| `--follow-redirects[=false] [--redirect-depth N]` | Ativo por padrão. Registra URL, hostname, esquema, status, Location, DNS, CNAME, endereços e provedor por hop. Destinos HTTP/HTTPS externos são acompanhados até o limite de 1 a 20; 403, 404 e 5xx isolados não viram dangling. |
+| `--check-vhost[=false]` | Ativo por padrão. Compara a linha de base com dois valores benignos de `Host` para identificar wildcard HTTP e backend padrão. |
+| `--check-web-deps[=false] [--related-hosts ...]` | A extração de CSP/HTML, o encadeamento CNAME e a correlação DNS são padrão. `--related-hosts` também permite consultar o status HTTP dos assets informados. |
+| `--check-sni` | Acrescenta um SNI alternativo à comparação padrão realizada sem SNI. |
+| `--pivot-san --san-roots ...` | A descoberta passiva de SANs relacionados é padrão; esta opção adiciona os nomes aceitos como novos candidatos da varredura. |
+| `--check-origin [--origin-allowlist ...]` | Correlaciona sinais de DNS, TLS e headers. A confirmação direta exige allowlist e nunca conecta a endereços privados. |
+| `--check-dnssec` | Distingue falha de validação DNSSEC, SERVFAIL inconclusivo e resposta validada. |
 | `--evasion` | Executa cinco sondas HTTP brutas de requisição única somente quando a linha de base aparenta bloqueio. Não executa CL.TE/TE.CL. |
 | `--whois-pivot --whois-pivot-confirm --whois-pivot-allowlist ...` | Descobre domínios relacionados por WHOIS e só inclui na varredura os domínios registráveis presentes na lista permitida. A confirmação não substitui a leitura do escopo do programa. |
 | `--check-framing` | Laboratório CL.TE/TE.CL de risco elevado. Exige também confirmação e lista de permissões controlada. |
 | `--aggressive` | Habilita validação ativa no Amazon S3 e no Amazon Route 53. Exige confirmação, lista de permissões exata e credenciais capazes de criar e excluir o recurso temporário. |
 | `--discord-webhook` | Envia achados relevantes da varredura inicial ao Discord. Prefira `SABBER_DISCORD_WEBHOOK` para não gravar o segredo no histórico do shell. |
+| `--webhook` | Envia o mesmo evento para um endpoint HTTPS genérico, assinado por HMAC-SHA256 com `SABBER_WEBHOOK_SECRET`. |
+| `--dns-consensus` | Exige quórum entre pelo menos dois resolvedores DNS clássicos. Não pode ser combinado com DoH. |
+| `--stream --batch-size N` | Deduplica a entrada em disco e processa lotes limitados em uma única execução retomável. |
+| `--fail-on-severity` | Retorna código diferente de zero se houver achado no limiar informado ou acima dele. |
 | `--discord-min-severity` | Define o limiar `info`, `low`, `medium`, `high` ou `critical`. O padrão `medium` elimina HEALTHY e misconfigurações de baixa prioridade. |
-| `--min-severity` | Filtra a CLI pela mesma escala do Discord. Vazio mantém todos os achados acionáveis; `medium` é útil para focar takeover provável, delegação candidata e exposições. |
-| `--show-inconclusive` | Exibe blocos humanos para `UNKNOWN` e `INSUFFICIENT_EVIDENCE`. Por padrão, esses estados ficam no JSON/SQLite e não poluem o stdout. |
+| `--min-severity` | Filtra a CLI pela mesma escala do Discord. Vazio mantém todos os candidatos e confirmados; `medium` é útil para focar takeover provável, delegação candidata e exposições. |
+| `--show-inconclusive` | Exibe observações, resultados suprimidos e análises inconclusivas. Por padrão, eles permanecem no JSON/SQLite sem poluir o stdout. |
 | `--no-color` | Desabilita ANSI. Cores também são removidas automaticamente em pipes/arquivos e quando `NO_COLOR` está definido. |
 
 Framing experimental deve ser usado apenas em laboratório próprio e controlado:
@@ -177,7 +279,7 @@ Não execute framing em infraestrutura de terceiros sem autorização específic
 
 ## Reivindicação automática agressiva
 
-O modo agressivo existe para programas que autorizam explicitamente a criação temporária do recurso. Na `v0.1.0-alpha`, há validação ativa para o Amazon S3 e para zonas do Amazon Route 53. MX, SRV, SPF, TXT, A/AAAA, Azure, Google Cloud e outros provedores permanecem não suportados enquanto não houver um adaptador capaz de criar, provar controle e liberar o recurso.
+O modo agressivo existe para programas que autorizam explicitamente a criação temporária do recurso. Há validação ativa para o Amazon S3 e para zonas do Amazon Route 53. MX, SRV, SPF, TXT, A/AAAA, Azure, Google Cloud e outros provedores permanecem não suportados enquanto não houver um adaptador capaz de criar, provar controle e liberar o recurso.
 
 ```bash
 export SABBER_AWS_ACCESS_KEY="..."
@@ -215,12 +317,27 @@ subdomainabber --db programa.db scan -l hosts.txt
 subdomainabber --db programa.db verify --only-risky
 subdomainabber --db programa.db db stats
 subdomainabber --db programa.db db export --format json
+subdomainabber --db programa.db db export --format sarif --out resultados.sarif
+subdomainabber --db programa.db db history
+subdomainabber --db programa.db db diff EXECUCAO_A EXECUCAO_B
+subdomainabber --db programa.db db replay EXECUCAO
+subdomainabber --db programa.db scan --resume EXECUCAO
+```
+
+Cada `scan` registra os alvos como pendentes antes do processamento. Uma interrupção mantém os alvos não concluídos disponíveis para `--resume`; repita as mesmas opções do perfil original. `db replay` reexecuta somente classificação e confiança sobre as observações armazenadas, sem acesso à rede.
+
+Para preservar uma execução como evidência verificável, gere as chaves uma vez, assine o bundle e valide-o com uma chave pública confiável:
+
+```bash
+subdomainabber --db programa.db db keygen --private-out bundle.key --public-out bundle.pub
+subdomainabber --db programa.db db bundle EXECUCAO --out evidencias.json --signing-key bundle.key
+subdomainabber db verify-bundle evidencias.json --public-key bundle.pub
 ```
 
 `verify` revalida os hosts já armazenados no banco; ele não recebe uma lista de entrada.
 A varredura inicial envia achados relevantes como `DISCOVERED`, e o `verify` envia mudanças posteriores. Configure o Discord com `--discord-webhook` ou `SABBER_DISCORD_WEBHOOK`; o Telegram usa `SABBER_TELEGRAM=bot_token:chat_id`.
 
-A CLI e o Discord usam a mesma seleção de evidência causal em vez da primeira evidência coletada. Configurações incorretas mostram o vetor e a causa concreta, como `HTTP_OPEN_REDIRECT` ou `SPF_BROKEN_INCLUDE`; ausência isolada de HSTS/CSP permanece apenas como contexto. Delegações e AXFR são agrupadas pela zona. Assim, dezenas de hosts abaixo de `projects.example.com` geram apenas um achado por corte de zona. Na saída humana da CLI, `HEALTHY`, `UNKNOWN` e `INSUFFICIENT_EVIDENCE` ficam ocultos por padrão; use `--show-inconclusive` para revisão. Eles nunca são enviados como descobertas ao Discord, inclusive quando o limiar é `info`.
+A CLI e o Discord usam a mesma seleção de evidência causal em vez da primeira evidência coletada. Achados do mesmo hostname aparecem em um único bloco, com o principal primeiro e os demais como relacionados. Configurações incorretas mostram o vetor e a causa concreta, como `HTTP_OPEN_REDIRECT` ou `SPF_BROKEN_INCLUDE`; ausência isolada de HSTS/CSP permanece apenas como postura ou hardening. Respostas HTTP 401/403/404/5xx sem exposição são suprimidas. Delegações e AXFR são agrupadas pela zona. Assim, dezenas de hosts abaixo de `projects.example.com` geram apenas um achado por corte de zona. Na saída humana da CLI, observações, suprimidos e inconclusivos ficam ocultos por padrão; use `--show-inconclusive` para revisão. Eles nunca são enviados como descobertas ao Discord, inclusive quando o limiar é `info`.
 
 | Severidade | Classificações típicas |
 |---|---|
@@ -247,12 +364,14 @@ subdomainabber fingerprints validate
 subdomainabber fingerprints list
 subdomainabber fingerprints coverage
 subdomainabber benchmark synthetic
+subdomainabber benchmark corpus
 subdomainabber benchmark regression datasets/regression
 subdomainabber benchmark mutator
 ```
 
 `benchmark gold` acessa somente as entradas marcadas como verificadas no conjunto informado e deve obedecer às mesmas regras de autorização da ferramenta. Os arquivos em `datasets/gold` são modelos inativos com domínios reservados; substitua-os apenas por infraestrutura controlada e registre data, autorização, referência e evidência esperada.
 `benchmark mutator` é totalmente local e mede sondas executadas, rejeições, diferenças, assinaturas, falsos positivos e falsos negativos em comportamentos controlados de borda e origem. Os nomes das pilhas descrevem comportamentos simulados, não alegações de vulnerabilidade de fornecedores.
+`benchmark corpus` reclassifica o conjunto versionado em `datasets/corpus`, agrupa os resultados por vetor e também falha quando um caso ultrapassa seu orçamento de requisições.
 
 ## Configuração
 
@@ -269,7 +388,7 @@ discord_min_severity: medium
 
 A saída humana da CLI, a ajuda, o progresso, os erros e as notificações são apresentados em PT-BR, sem opção de idioma. A estrutura JSON e os identificadores técnicos de classificações e evidências permanecem estáveis para automação; apenas os textos descritivos humanos são emitidos em PT-BR.
 
-## Limitações conhecidas do alpha
+## Limitações conhecidas
 
 - assinaturas podem ficar desatualizadas ou produzir falsos positivos ou negativos;
 - validação ativa real está limitada a Amazon S3 e Amazon Route 53;
@@ -278,6 +397,7 @@ A saída humana da CLI, a ajuda, o progresso, os erros e as notificações são 
 - o benchmark local atual demonstra os invariantes do Mutator, mas não substitui medições contra versões reais de Nginx, HAProxy, Envoy, Traefik e Apache;
 - MX/SRV/SPF/TXT/A/AAAA continuam candidatos até que exista um adaptador de criação, prova de controle e liberação para o provedor;
 - algumas verificações dependem de conectividade e APIs de terceiros;
+- consenso DNS requer pelo menos dois resolvedores clássicos e fica indisponível quando DoH está ativo;
 - `--timeout` limita a operação de rede após a permissão do limitador de taxa; ele não é um prazo total para concluir todos os módulos de um host;
 - apenas `TAKEN_OVER`, `ZONE_CONTROL_CONFIRMED` e resultados com prova ativa estruturada significam controle comprovado; as demais classificações representam achados para investigação.
 
@@ -294,6 +414,7 @@ go test ./... -count=1
 go test -race ./... -count=1
 go run . fingerprints validate --strict
 go run . benchmark synthetic
+go run . benchmark corpus
 go run . benchmark regression datasets/regression
 go run . benchmark mutator
 go build ./...
@@ -307,6 +428,6 @@ Leia [CONTRIBUTING.md](CONTRIBUTING.md) antes de enviar mudanças. Vulnerabilida
 
 O código original do projeto é disponibilizado sob a [MIT License com a Commons Clause License Condition v1.0](LICENSE). A Commons Clause restringe a venda do Software conforme a definição presente no texto da licença, tornando o projeto **source-available**.
 
-A versão `v0.1.0-alpha` e os commits publicados antes da adoção da Commons Clause permanecem sob os termos da licença MIT que os acompanhava. Consulte [LICENSING.md](LICENSING.md) para o histórico e o resumo dos termos.
+A versão `v0.1.0` e os commits publicados antes da adoção da Commons Clause permanecem sob os termos da licença MIT que os acompanhava. Consulte [LICENSING.md](LICENSING.md) para o histórico e o resumo dos termos.
 
 O catálogo inclui material derivado sujeito aos avisos e às condições descritos em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

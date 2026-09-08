@@ -19,13 +19,50 @@ type Options struct {
 }
 
 type humanFinding struct {
-	rank int
-	body string
+	rank    int
+	body    string
+	summary string
 }
 
 type fieldLine struct {
 	label string
 	value string
+}
+
+var genericRanks = map[string]int{
+	"ORIGIN_DIRECT_MATCH":                  80,
+	"DNSSEC_BOGUS":                         60,
+	"CLOUD_S3_WRITABLE":                    75,
+	"CLOUD_S3_LISTABLE":                    65,
+	"CLOUD_AZURE_BLOB_LISTABLE":            65,
+	"CLOUD_GCS_LISTABLE":                   65,
+	"DANGLING_REDIRECT":                    55,
+	"HTTPS_DOWNGRADE_REDIRECT":             50,
+	"HTTP_HTTPS_PORT_INCONSISTENT":         45,
+	"PLAINTEXT_WEB_CONTENT":                50,
+	"PLAINTEXT_AUTH_INTERFACE":             75,
+	"HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE": 70,
+	"CSP_DANGLING_DEPENDENCY":              55,
+	"SUBRESOURCE_DANGLING":                 55,
+	"DEAD_ASSET_REFERENCE":                 50,
+	"DEAD_ASSET_HTTP":                      35,
+	"HTTP_OPEN_REDIRECT":                   55,
+	"EMAIL_SPF_PERMISSIVE":                 40,
+	"EMAIL_SPF_MISSING":                    25,
+	"EMAIL_DMARC_MISSING":                  25,
+	"TLS_EXPIRED":                          35,
+	"TLS_SELF_SIGNED":                      30,
+	"TLS_MISMATCH":                         30,
+	"SNI_CERT_MISMATCH":                    25,
+	"TLS_CERTIFICATE_DRIFT":                20,
+	"CAA_POLICY_INCONSISTENT":              20,
+	"CAA_ISSUER_MISMATCH":                  20,
+	"TXT_OWNERSHIP_TOKEN_RESIDUAL":         15,
+	"PROVIDER_MIGRATION_DETECTED":          25,
+	"PROVIDER_MIGRATION_STALE_REFERENCE":   30,
+	"SHADOW_IT_DETECTED":                   20,
+	"RELATED_DOMAIN_COOKIE_SCOPE":          35,
+	"RELATED_DOMAIN_CORS_CREDENTIALS":      40,
 }
 
 func Human(analysis *core.HostAnalysis, confidence string) string {
@@ -43,7 +80,10 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 	var findings []humanFinding
 	if proof := analysis.ActiveVerification; proof != nil && proof.Verified && proof.ControlProven &&
 		!strings.EqualFold(proof.Vector, "CNAME") && !strings.EqualFold(proof.Vector, "NS") {
-		findings = append(findings, humanFinding{rank: 110, body: activeVectorFinding(analysis, proof, confidence, options)})
+		findings = append(findings, humanFinding{
+			rank: 110, body: activeVectorFinding(analysis, proof, confidence, options),
+			summary: fmt.Sprintf("%s — %s", valueOr(proof.Vector, "vetor ativo"), valueOr(proof.Resource, analysis.Host)),
+		})
 	}
 	if hasCNAMEFinding(analysis) {
 		rank := 65
@@ -55,7 +95,7 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 		case analysis.Classification == classification.LevelOrphaned:
 			rank = 80
 		}
-		findings = append(findings, humanFinding{rank: rank, body: cnameFinding(analysis, confidence, options)})
+		findings = append(findings, humanFinding{rank: rank, body: cnameFinding(analysis, confidence, options), summary: cnameSummary(analysis)})
 	}
 	if !options.SuppressDelegation && analysis.Delegation != nil &&
 		hasAny(analysis, "DELEGATION_BROKEN", "DELEGATION_TAKEOVER_CANDIDATE",
@@ -67,23 +107,25 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 		} else if hasAny(analysis, "DELEGATION_TAKEOVER_CANDIDATE", "DELEGATION_CLAIMABILITY_VERIFIED") {
 			rank = 90
 		}
-		findings = append(findings, humanFinding{rank: rank, body: delegationFinding(analysis, confidence, options)})
+		findings = append(findings, humanFinding{rank: rank, body: delegationFinding(analysis, confidence, options), summary: "NS — " + analysis.Delegation.Zone})
 	}
 	for _, candidate := range brokenMXs(analysis) {
-		findings = append(findings, humanFinding{rank: 45, body: mxFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 45, body: mxFinding(analysis, candidate, confidence, options), summary: mxSummary(candidate)})
 	}
 	for _, candidate := range brokenSRVs(analysis) {
-		findings = append(findings, humanFinding{rank: 40, body: srvFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 40, body: srvFinding(analysis, candidate, confidence, options), summary: srvSummary(candidate)})
 	}
 	for _, candidate := range analysis.SPFCandidates {
-		findings = append(findings, humanFinding{rank: 45, body: spfFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 45, body: spfFinding(analysis, candidate, confidence, options), summary: spfSummary(candidate)})
 	}
 	if candidate, ok := staleIP(analysis); ok {
-		findings = append(findings, humanFinding{rank: 50, body: ipFinding(analysis, candidate, confidence, options)})
+		findings = append(findings, humanFinding{rank: 50, body: ipFinding(analysis, candidate, confidence, options), summary: fmt.Sprintf("%s/ASN — %s", candidate.RecordType, candidate.IP)})
 	}
 	if hasAny(analysis, "DNS_AXFR_ALLOWED") {
-		findings = append(findings, humanFinding{rank: 70, body: axfrFinding(analysis, confidence, options)})
+		evidence := firstEvidence(analysis, "DNS_AXFR_ALLOWED")
+		findings = append(findings, humanFinding{rank: 70, body: axfrFinding(analysis, confidence, options), summary: "AXFR — " + valueOr(evidence.Metadata["zone"], analysis.Host)})
 	}
+	findings = append(findings, genericFindings(analysis, confidence, options)...)
 	if len(findings) == 0 {
 		if options.SuppressDelegation && analysis.Delegation != nil &&
 			hasAny(analysis, "DELEGATION_BROKEN", "DELEGATION_TAKEOVER_CANDIDATE",
@@ -95,11 +137,106 @@ func HumanWithOptions(analysis *core.HostAnalysis, confidence string, options Op
 	}
 
 	sort.SliceStable(findings, func(left, right int) bool { return findings[left].rank > findings[right].rank })
-	blocks := make([]string, 0, len(findings))
-	for _, item := range findings {
-		blocks = append(blocks, strings.TrimSpace(item.body))
+	return consolidateFindings(findings, options)
+}
+
+func genericFindings(analysis *core.HostAnalysis, confidence string, options Options) []humanFinding {
+	seen := make(map[string]struct{})
+	var findings []humanFinding
+	for _, evidence := range analysis.Evidences {
+		rank, ok := genericRanks[evidence.Type]
+		if !ok {
+			continue
+		}
+		resource := evidenceResource(analysis.Host, evidence)
+		key := evidence.Type + "|" + resource
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		findings = append(findings, humanFinding{
+			rank: rank, body: evidenceFinding(analysis, evidence, resource, confidence, options),
+			summary: evidenceSummary(analysis, evidence, resource),
+		})
 	}
-	return strings.Join(blocks, "\n\n") + "\n"
+	return findings
+}
+
+func evidenceFinding(analysis *core.HostAnalysis, evidence core.Evidence, resource, confidence string, options Options) string {
+	context := finding.Primary(&core.HostAnalysis{Host: analysis.Host, DNS: analysis.DNS, Evidences: []core.Evidence{evidence}})
+	description := presentation.EvidenceDescription(evidence)
+	evidenceLine := evidence.Type
+	if description != "" {
+		evidenceLine += " — " + description
+	}
+	fields := []fieldLine{
+		{"Categoria", category(analysis.Classification)},
+		{"Vetor", context.Vector},
+		{"Evidência principal", evidenceLine},
+		{"Fonte", evidence.Source},
+	}
+	fields = append(fields, decisionFields(analysis, confidence)...)
+	fields = append(fields, fieldLine{"Próximo passo", nextStep(analysis)})
+	return renderBlock(
+		presentation.Classification(analysis.Classification), resource,
+		toneForClassification(analysis.Classification),
+		fields, options,
+	)
+}
+
+func evidenceSummary(analysis *core.HostAnalysis, evidence core.Evidence, resource string) string {
+	context := finding.Primary(&core.HostAnalysis{Host: analysis.Host, DNS: analysis.DNS, Evidences: []core.Evidence{evidence}})
+	description := presentation.EvidenceDescription(evidence)
+	if description == "" {
+		description = evidence.Type
+	}
+	if resource != analysis.Host {
+		return fmt.Sprintf("%s — %s: %s", context.Vector, resource, description)
+	}
+	return context.Vector + " — " + description
+}
+
+func evidenceResource(host string, evidence core.Evidence) string {
+	for _, key := range []string{"target_host", "host", "target", "url", "location", "zone"} {
+		if value := strings.TrimSpace(evidence.Metadata[key]); value != "" {
+			return value
+		}
+	}
+	return host
+}
+
+func consolidateFindings(findings []humanFinding, options Options) string {
+	var builder strings.Builder
+	builder.WriteString(strings.TrimSpace(findings[0].body))
+	builder.WriteByte('\n')
+	for _, item := range findings[1:] {
+		builder.WriteString("  ")
+		builder.WriteString(color.Field("Achado relacionado", options.Color))
+		builder.WriteString(": ")
+		builder.WriteString(item.summary)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func cnameSummary(analysis *core.HostAnalysis) string {
+	target := analysis.Host
+	if len(analysis.DNS.CNAME) > 0 {
+		target = analysis.DNS.CNAME[len(analysis.DNS.CNAME)-1]
+	}
+	return "CNAME — " + target
+}
+
+func mxSummary(candidate core.MXCandidate) string {
+	return fmt.Sprintf("MX — %s (%s)", candidate.Target, presentation.Value(string(candidate.DNSStatus)))
+}
+
+func srvSummary(candidate core.SRVCandidate) string {
+	return fmt.Sprintf("SRV — %s → %s:%d (%s)", candidate.Record.Owner, candidate.Record.Target, candidate.Record.Port, presentation.Value(string(candidate.DNSStatus)))
+}
+
+func spfSummary(candidate core.SPFCandidate) string {
+	return fmt.Sprintf("SPF %s — %s (%s)", candidate.Mechanism, candidate.Domain, presentation.Value(string(candidate.DNSStatus)))
 }
 
 func fallbackFinding(analysis *core.HostAnalysis, confidence string, options Options) string {
@@ -109,19 +246,70 @@ func fallbackFinding(analysis *core.HostAnalysis, confidence string, options Opt
 	if description != "" {
 		evidence += " — " + description
 	}
+	fields := []fieldLine{
+		{"Categoria", category(analysis.Classification)},
+		{"Vetor", primary.Vector},
+		{"Evidência principal", evidence},
+	}
+	fields = append(fields, decisionFields(analysis, confidence)...)
+	fields = append(fields, fieldLine{"Próximo passo", nextStep(analysis)})
 	return renderBlock(
-		presentation.Classification(analysis.Classification),
+		resultLabel(analysis),
 		valueOr(primary.Resource, analysis.Host),
 		toneForClassification(analysis.Classification),
-		[]fieldLine{
-			{"Categoria", category(analysis.Classification)},
-			{"Vetor", primary.Vector},
-			{"Evidência principal", evidence},
-			{"Confiança da análise", confidence},
-			{"Próximo passo", "inspecione as evidências estruturadas com --explain-json"},
-		},
+		fields,
 		options,
 	)
+}
+
+func decisionFields(analysis *core.HostAnalysis, fallback string) []fieldLine {
+	if analysis.Decision == nil {
+		return []fieldLine{{"Confiança da classificação", fallback}}
+	}
+	impact := "não"
+	if analysis.Decision.ImpactConfirmed {
+		impact = "sim"
+	}
+	return []fieldLine{
+		{"Estado do resultado", presentation.Value(string(analysis.Decision.State))},
+		{"Regra", presentation.Rule(analysis.Decision.Rule)},
+		{"Motivos", localizedReasons(analysis.Decision.ReasonCodes)},
+		{"Confiança da observação", strconv.Itoa(analysis.Decision.ObservationConfidence) + "%"},
+		{"Confiança da classificação", strconv.Itoa(analysis.Decision.ClassificationConfidence) + "%"},
+		{"Confiança do impacto", strconv.Itoa(analysis.Decision.ImpactConfidence) + "%"},
+		{"Impacto confirmado", impact},
+	}
+}
+
+func localizedReasons(reasons []string) string {
+	translated := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		translated = append(translated, presentation.Reason(reason))
+	}
+	return strings.Join(translated, ", ")
+}
+
+func resultLabel(analysis *core.HostAnalysis) string {
+	if analysis.Decision != nil && analysis.Decision.State != "" {
+		return presentation.Value(string(analysis.Decision.State))
+	}
+	return presentation.Classification(analysis.Classification)
+}
+
+func nextStep(analysis *core.HostAnalysis) string {
+	if analysis.Decision == nil {
+		return "inspecione as evidências estruturadas com --explain-json"
+	}
+	switch analysis.Decision.State {
+	case core.ResultSuppressed:
+		return "nenhuma ação sugerida; a evidência não demonstrou exposição"
+	case core.ResultObservation:
+		return "use a observação como contexto de hardening"
+	case core.ResultInconclusive:
+		return "revise o motivo inconclusivo e repita a coleta se necessário"
+	default:
+		return "revise a evidência estruturada e confirme o impacto"
+	}
 }
 
 func delegationFinding(analysis *core.HostAnalysis, confidence string, options Options) string {
@@ -207,6 +395,11 @@ func mxFinding(analysis *core.HostAnalysis, candidate core.MXCandidate, confiden
 	return renderBlock("MX QUEBRADO", analysis.Host, color.ToneLow, []fieldLine{
 		{"Vetor", "MX"},
 		{"Destino", candidate.Target},
+		{"Prioridade", strconv.Itoa(int(candidate.Preference))},
+		{"Papel", presentation.Value(candidate.Role)},
+		{"Destino final", candidate.FinalTarget},
+		{"Cadeia CNAME", strings.Join(candidate.CNAME, " → ")},
+		{"Alternativas saudáveis", strconv.Itoa(candidate.HealthyAlternatives)},
 		{"Resultado DNS", presentation.Value(string(candidate.DNSStatus))},
 		{"Provedor", valueOr(candidate.Provider, "desconhecido")},
 		{"Propriedade", valueOr(presentation.Value(candidate.Ownership), "desconhecida")},
@@ -224,6 +417,8 @@ func srvFinding(analysis *core.HostAnalysis, candidate core.SRVCandidate, confid
 		{"Vetor", "SRV"},
 		{"Nome proprietário DNS", candidate.Record.Owner},
 		{"Destino", fmt.Sprintf("%s:%d", candidate.Record.Target, candidate.Record.Port)},
+		{"Destino final", candidate.FinalTarget},
+		{"Cadeia CNAME", strings.Join(candidate.CNAME, " → ")},
 		{"Resultado DNS", presentation.Value(string(candidate.DNSStatus))},
 		{"Dados do serviço", fmt.Sprintf("prioridade: %d; peso: %d", candidate.Record.Priority, candidate.Record.Weight)},
 		{"Propriedade", valueOr(presentation.Value(candidate.Ownership), "desconhecida")},

@@ -9,17 +9,22 @@ var hostAnalysisMutexInit sync.Mutex
 
 // DNSRecordSet armazena o perfil completo de resolução DNS de um host.
 type DNSRecordSet struct {
-	A          []string    `json:"a"`
-	AAAA       []string    `json:"aaaa"`
-	CNAME      []string    `json:"cname"` // Cadeia resolvida.
-	NS         []string    `json:"ns"`
-	MX         []string    `json:"mx"`
-	TXT        []string    `json:"txt"`
-	SRV        []string    `json:"srv"`
-	SRVRecords []SRVRecord `json:"srv_records,omitempty"`
-	SOA        []string    `json:"soa,omitempty"`
-	CAA        []string    `json:"caa,omitempty"`
-	PTR        []string    `json:"ptr,omitempty"`
+	A          []string         `json:"a"`
+	AAAA       []string         `json:"aaaa"`
+	CNAME      []string         `json:"cname"` // Cadeia resolvida.
+	DNAME      []DNAMERecord    `json:"dname,omitempty"`
+	NS         []string         `json:"ns"`
+	MX         []string         `json:"mx"`
+	MXRecords  []MXRecord       `json:"mx_records,omitempty"`
+	TXT        []string         `json:"txt"`
+	SRV        []string         `json:"srv"`
+	SRVRecords []SRVRecord      `json:"srv_records,omitempty"`
+	SOA        []string         `json:"soa,omitempty"`
+	CAA        []string         `json:"caa,omitempty"`
+	PTR        []string         `json:"ptr,omitempty"`
+	HTTPS      []ServiceBinding `json:"https,omitempty"`
+	SVCB       []ServiceBinding `json:"svcb,omitempty"`
+	Consensus  []DNSConsensus   `json:"consensus,omitempty"`
 }
 
 // Evidence representa uma observação isolada coletada durante a análise.
@@ -66,6 +71,12 @@ type HostAnalysis struct {
 	CDN                string                     `json:"cdn,omitempty"`
 	Headers            map[string][]string        `json:"headers,omitempty"` // Apenas se --headers ativo
 	HTTPObservations   map[string]HTTPObservation `json:"http_observations,omitempty"`
+	HTTPCorrelation    *HTTPCorrelation           `json:"http_correlation,omitempty"`
+	Redirects          map[string]RedirectChain   `json:"redirects,omitempty"`
+	WebDependencies    []WebDependency            `json:"web_dependencies,omitempty"`
+	TLS                *TLSObservation            `json:"tls,omitempty"`
+	SNIVariants        []TLSObservation           `json:"sni_variants,omitempty"`
+	SANCandidates      []string                   `json:"san_candidates,omitempty"`
 	ProviderCandidates []ProviderCandidate        `json:"provider_candidates,omitempty"`
 	MutationResults    []MutationResult           `json:"mutation_results,omitempty"`
 	Delegation         *DelegationCandidate       `json:"delegation_candidate,omitempty"`
@@ -75,6 +86,9 @@ type HostAnalysis struct {
 	SPFCandidates      []SPFCandidate             `json:"spf_candidates,omitempty"`
 	CloudIPCandidates  []CloudIPCandidate         `json:"cloud_ip_candidates,omitempty"`
 	ScanProfile        *ScanProfile               `json:"scan_profile,omitempty"`
+	Inferences         []Inference                `json:"inferences,omitempty"`
+	Decision           *Decision                  `json:"decision,omitempty"`
+	ResultState        ResultState                `json:"result_state"`
 
 	TestedVectors  []string `json:"tested_vectors,omitempty"` // Lista de módulos que efetivamente executaram
 	CoverageScore  float64  `json:"coverage_score"`           // Teto de confiança calculado
@@ -89,10 +103,11 @@ type HostAnalysis struct {
 	VerificationScore  int                 `json:"verification_score"` // 100 = provado, 0 = sem verificação/falhou
 	ActiveVerification *VerificationResult `json:"active_verification,omitempty"`
 
-	FirstSeen              time.Time `json:"first_seen"`
-	LastSeen               time.Time `json:"last_seen"`
-	PreviousClassification string    `json:"previous_classification"`
-	LastStateChange        time.Time `json:"last_state_change"`
+	FirstSeen              time.Time  `json:"first_seen"`
+	LastSeen               time.Time  `json:"last_seen"`
+	PreviousClassification string     `json:"previous_classification"`
+	LastStateChange        time.Time  `json:"last_state_change"`
+	PreviousEvidences      []Evidence `json:"-"`
 }
 
 // ScanProfile registra apenas opções reproduzíveis e não secretas da coleta.
@@ -109,6 +124,14 @@ type ScanProfile struct {
 	CheckHeaders         bool     `json:"check_headers,omitempty"`
 	CheckShadowIT        bool     `json:"check_shadow_it,omitempty"`
 	CheckRedirects       bool     `json:"check_redirects,omitempty"`
+	CheckVHost           bool     `json:"check_vhost,omitempty"`
+	CheckWebDeps         bool     `json:"check_web_dependencies,omitempty"`
+	CheckSNI             bool     `json:"check_sni,omitempty"`
+	AlternateSNI         bool     `json:"alternate_sni,omitempty"`
+	PivotSAN             bool     `json:"pivot_san,omitempty"`
+	SANRoots             []string `json:"san_roots,omitempty"`
+	CheckOrigin          bool     `json:"check_origin,omitempty"`
+	OriginTargets        []string `json:"origin_targets,omitempty"`
 	CheckEvasion         bool     `json:"check_evasion,omitempty"`
 	CheckFraming         bool     `json:"check_framing,omitempty"`
 	Aggressive           bool     `json:"aggressive,omitempty"`
@@ -116,9 +139,13 @@ type ScanProfile struct {
 	SRVOwners            []string `json:"srv_owners,omitempty"`
 	SRVExhaustive        bool     `json:"srv_exhaustive,omitempty"`
 	FollowRedirects      bool     `json:"follow_redirects,omitempty"`
+	RedirectDepth        int      `json:"redirect_depth,omitempty"`
+	RelatedHosts         []string `json:"related_hosts,omitempty"`
+	AssetHosts           []string `json:"asset_hosts,omitempty"`
 	FetchHeaders         bool     `json:"fetch_headers,omitempty"`
 	UserAgent            string   `json:"user_agent,omitempty"`
 	RelatedImpactInScope bool     `json:"related_impact_in_scope,omitempty"`
+	DNSConsensus         bool     `json:"dns_consensus,omitempty"`
 }
 
 type UnknownProviderEvidence struct {
@@ -174,6 +201,52 @@ func (h *HostAnalysis) HTTPObservation(scheme string) (HTTPObservation, bool) {
 	return cloneHTTPObservation(observation), ok
 }
 
+func (h *HostAnalysis) SetRedirectChain(scheme string, chain RedirectChain) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.Redirects == nil {
+		h.Redirects = make(map[string]RedirectChain)
+	}
+	h.Redirects[scheme] = chain
+}
+
+func (h *HostAnalysis) AddWebDependency(dependency WebDependency) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.WebDependencies = append(h.WebDependencies, dependency)
+}
+
+func (h *HostAnalysis) SetTLS(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	copy := observation
+	copy.SANs = append([]string(nil), observation.SANs...)
+	h.TLS = &copy
+}
+
+func (h *HostAnalysis) AddSNIVariant(observation TLSObservation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	observation.SANs = append([]string(nil), observation.SANs...)
+	h.SNIVariants = append(h.SNIVariants, observation)
+}
+
+func (h *HostAnalysis) AddSANCandidate(host string) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, existing := range h.SANCandidates {
+		if existing == host {
+			return
+		}
+	}
+	h.SANCandidates = append(h.SANCandidates, host)
+}
+
 func (h *HostAnalysis) AddProviderCandidate(candidate ProviderCandidate) {
 	h.InitMutex()
 	h.mu.Lock()
@@ -201,6 +274,23 @@ func (h *HostAnalysis) AddMutationResult(result MutationResult) {
 	h.MutationResults = append(h.MutationResults, result)
 }
 
+func (h *HostAnalysis) AddInference(inference Inference) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.Inferences = append(h.Inferences, inference)
+}
+
+func (h *HostAnalysis) SetHTTPCorrelation(correlation HTTPCorrelation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	copy := correlation
+	copy.ReasonCodes = append([]string(nil), correlation.ReasonCodes...)
+	copy.TransportSignals = append([]string(nil), correlation.TransportSignals...)
+	h.HTTPCorrelation = &copy
+}
+
 func cloneHTTPObservation(observation HTTPObservation) HTTPObservation {
 	observation.Body = append([]byte(nil), observation.Body...)
 	observation.NormalizedBody = append([]byte(nil), observation.NormalizedBody...)
@@ -211,5 +301,13 @@ func cloneHTTPObservation(observation HTTPObservation) HTTPObservation {
 		}
 		observation.Headers = headers
 	}
+	if observation.RawHeaders != nil {
+		headers := make(map[string][]string, len(observation.RawHeaders))
+		for name, values := range observation.RawHeaders {
+			headers[name] = append([]string(nil), values...)
+		}
+		observation.RawHeaders = headers
+	}
+	observation.Cookies = append([]HTTPCookie(nil), observation.Cookies...)
 	return observation
 }

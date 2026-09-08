@@ -75,6 +75,8 @@ type Config struct {
 	// DiscordMinSeverity filtra o volume de notificações. Valores aceitos:
 	// info, low, medium, high e critical. Variável de ambiente: SABBER_DISCORD_MIN_SEVERITY.
 	DiscordMinSeverity string `yaml:"discord_min_severity"`
+	WebhookURL         string `yaml:"webhook"`
+	WebhookSecret      string `yaml:"webhook_secret"`
 
 	// TelegramConfig contém a configuração de notificação do Telegram
 	// no formato "bot_token:chat_id".
@@ -113,18 +115,24 @@ type Config struct {
 	ConfigFile string `yaml:"-"`
 
 	FollowRedirects bool   `yaml:"follow_redirects"`
+	RedirectDepth   int    `yaml:"redirect_depth"`
 	UserAgent       string `yaml:"user_agent"`
 	DoH             string `yaml:"doh"`
 	FetchHeaders    bool   `yaml:"headers"`
 
 	// Tokens de APIs passivas e de nuvem
-	AlienVaultToken  string `yaml:"alienvault_token"`
-	CertSpotterToken string `yaml:"certspotter_token"`
-	AwsAccessKey     string `yaml:"aws_access_key"`
-	AwsSecretKey     string `yaml:"aws_secret_key"`
-	AwsSessionToken  string `yaml:"aws_session_token"`
-	AwsRegion        string `yaml:"aws_region"`
-	UrlscanToken     string `yaml:"urlscan_token"`
+	AlienVaultToken     string `yaml:"alienvault_token"`
+	CertSpotterToken    string `yaml:"certspotter_token"`
+	AwsAccessKey        string `yaml:"aws_access_key"`
+	AwsSecretKey        string `yaml:"aws_secret_key"`
+	AwsSessionToken     string `yaml:"aws_session_token"`
+	AwsRegion           string `yaml:"aws_region"`
+	UrlscanToken        string `yaml:"urlscan_token"`
+	SecurityTrailsToken string `yaml:"securitytrails_token"`
+	HackerOneUsername   string `yaml:"hackerone_username"`
+	HackerOneToken      string `yaml:"hackerone_token"`
+	IntigritiToken      string `yaml:"intigriti_token"`
+	BugcrowdToken       string `yaml:"bugcrowd_token"`
 
 	// Estas marcas distinguem um zero ausente de um zero escrito
 	// explicitamente no YAML. Assim, a validação rejeita valores inseguros em
@@ -132,6 +140,8 @@ type Config struct {
 	concurrencyConfigured bool
 	timeoutConfigured     bool
 	rateLimitConfigured   bool
+	redirectConfigured    bool
+	followConfigured      bool
 }
 
 // Defaults retorna uma configuração com valores padrão sensatos para uso
@@ -143,6 +153,8 @@ func Defaults() *Config {
 		Timeout:            5,
 		DBPath:             "subdomainabber.db",
 		RateLimit:          10,
+		FollowRedirects:    true,
+		RedirectDepth:      10,
 		AwsRegion:          "us-east-1",
 		DiscordMinSeverity: "medium",
 	}
@@ -166,6 +178,7 @@ func LoadFile(path string) (*Config, error) {
 		Concurrency *int `yaml:"concurrency"`
 		Timeout     *int `yaml:"timeout"`
 		RateLimit   *int `yaml:"rate_limit"`
+		Redirect    *int `yaml:"redirect_depth"`
 	}
 	if err := yaml.Unmarshal(data, &configuredNumbers); err != nil {
 		return nil, fmt.Errorf("config: erro ao interpretar os valores numéricos de %q: %w", path, err)
@@ -173,6 +186,14 @@ func LoadFile(path string) (*Config, error) {
 	cfg.concurrencyConfigured = configuredNumbers.Concurrency != nil
 	cfg.timeoutConfigured = configuredNumbers.Timeout != nil
 	cfg.rateLimitConfigured = configuredNumbers.RateLimit != nil
+	cfg.redirectConfigured = configuredNumbers.Redirect != nil
+	var configuredBooleans struct {
+		FollowRedirects *bool `yaml:"follow_redirects"`
+	}
+	if err := yaml.Unmarshal(data, &configuredBooleans); err != nil {
+		return nil, fmt.Errorf("config: erro ao interpretar os valores booleanos de %q: %w", path, err)
+	}
+	cfg.followConfigured = configuredBooleans.FollowRedirects != nil
 
 	return cfg, nil
 }
@@ -252,6 +273,14 @@ func ApplyEnv(cfg *Config) error {
 			cfg.RateLimit = n
 		}
 	}
+	if v := os.Getenv("SABBER_REDIRECT_DEPTH"); v != "" {
+		n, err := parseEnvironmentInteger("SABBER_REDIRECT_DEPTH", v)
+		if err != nil {
+			numericErrors = append(numericErrors, err)
+		} else {
+			cfg.RedirectDepth = n
+		}
+	}
 
 	// Campos booleanos
 	if v := os.Getenv("SABBER_VERBOSE"); v != "" {
@@ -271,6 +300,7 @@ func ApplyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("SABBER_FOLLOW_REDIRECTS"); v != "" {
 		cfg.FollowRedirects = parseBool(v)
+		cfg.followConfigured = true
 	}
 	if v := os.Getenv("SABBER_FETCH_HEADERS"); v != "" {
 		cfg.FetchHeaders = parseBool(v)
@@ -297,6 +327,12 @@ func ApplyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("SABBER_DISCORD_MIN_SEVERITY"); v != "" {
 		cfg.DiscordMinSeverity = v
+	}
+	if v := os.Getenv("SABBER_WEBHOOK"); v != "" {
+		cfg.WebhookURL = v
+	}
+	if v := os.Getenv("SABBER_WEBHOOK_SECRET"); v != "" {
+		cfg.WebhookSecret = v
 	}
 	if v := os.Getenv("SABBER_TELEGRAM"); v != "" {
 		cfg.TelegramConfig = v
@@ -335,6 +371,21 @@ func ApplyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("SABBER_URLSCAN_TOKEN"); v != "" {
 		cfg.UrlscanToken = v
+	}
+	if v := os.Getenv("SABBER_SECURITYTRAILS_TOKEN"); v != "" {
+		cfg.SecurityTrailsToken = v
+	}
+	if v := os.Getenv("SABBER_HACKERONE_USERNAME"); v != "" {
+		cfg.HackerOneUsername = v
+	}
+	if v := os.Getenv("SABBER_HACKERONE_TOKEN"); v != "" {
+		cfg.HackerOneToken = v
+	}
+	if v := os.Getenv("SABBER_INTIGRITI_TOKEN"); v != "" {
+		cfg.IntigritiToken = v
+	}
+	if v := os.Getenv("SABBER_BUGCROWD_TOKEN"); v != "" {
+		cfg.BugcrowdToken = v
 	}
 
 	return errors.Join(numericErrors...)
@@ -382,6 +433,10 @@ func Merge(base, override *Config) *Config {
 		merged.RateLimit = override.RateLimit
 		merged.rateLimitConfigured = override.rateLimitConfigured
 	}
+	if override.RedirectDepth != 0 || override.redirectConfigured {
+		merged.RedirectDepth = override.RedirectDepth
+		merged.redirectConfigured = override.redirectConfigured
+	}
 
 	// Para booleanos, true em `override` sempre sobrescreve o valor anterior.
 	if override.Verbose {
@@ -399,8 +454,9 @@ func Merge(base, override *Config) *Config {
 	if override.NoWildcardFilter {
 		merged.NoWildcardFilter = true
 	}
-	if override.FollowRedirects {
-		merged.FollowRedirects = true
+	if override.FollowRedirects || override.followConfigured {
+		merged.FollowRedirects = override.FollowRedirects
+		merged.followConfigured = override.followConfigured
 	}
 	if override.FetchHeaders {
 		merged.FetchHeaders = true
@@ -424,6 +480,12 @@ func Merge(base, override *Config) *Config {
 	}
 	if override.DiscordMinSeverity != "" {
 		merged.DiscordMinSeverity = override.DiscordMinSeverity
+	}
+	if override.WebhookURL != "" {
+		merged.WebhookURL = override.WebhookURL
+	}
+	if override.WebhookSecret != "" {
+		merged.WebhookSecret = override.WebhookSecret
 	}
 	if override.TelegramConfig != "" {
 		merged.TelegramConfig = override.TelegramConfig
@@ -468,6 +530,21 @@ func Merge(base, override *Config) *Config {
 	}
 	if override.UrlscanToken != "" {
 		merged.UrlscanToken = override.UrlscanToken
+	}
+	if override.SecurityTrailsToken != "" {
+		merged.SecurityTrailsToken = override.SecurityTrailsToken
+	}
+	if override.HackerOneUsername != "" {
+		merged.HackerOneUsername = override.HackerOneUsername
+	}
+	if override.HackerOneToken != "" {
+		merged.HackerOneToken = override.HackerOneToken
+	}
+	if override.IntigritiToken != "" {
+		merged.IntigritiToken = override.IntigritiToken
+	}
+	if override.BugcrowdToken != "" {
+		merged.BugcrowdToken = override.BugcrowdToken
 	}
 	// Fatias: sobrescrever se houver elementos.
 	return &merged

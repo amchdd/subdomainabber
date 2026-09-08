@@ -9,7 +9,7 @@ var EvidenceWeights = map[string]int{
 	"NS_SERVFAIL":       30,
 	"NS_TIMEOUT":        10,
 	"CNAME_MATCH":       20,
-	"HTTP_STATUS_404":   10,
+	"HTTP_STATUS_404":   0,
 	"NXDOMAIN_EXPECTED": 10,
 	// Evidências sem peso específico usam o valor configurado pela assinatura.
 	"LEGACY_MATCH": 20,

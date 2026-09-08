@@ -148,6 +148,23 @@ func TestHTTPCollectorCustomUserAgentOmitsUnverifiableClientHints(t *testing.T) 
 	}
 }
 
+func TestHTTPCollectorAppliesHeadersByTarget(t *testing.T) {
+	collector := NewHTTPCollector(nil, time.Second, "", false, "default-agent", false)
+	collector.SetTargetHeaders(map[string]http.Header{
+		"alvo.example": {"User-Agent": {"Researcher"}, "X-Research": {"yes"}},
+	})
+	collector.SetTransport(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("User-Agent") != "Researcher" || request.Header.Get("X-Research") != "yes" {
+			t.Fatalf("headers do alvo ausentes: %#v", request.Header)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("ok")), Request: request}, nil
+	}))
+	analysis := &core.HostAnalysis{Host: "alvo.example", DNS: core.DNSRecordSet{A: []string{"192.0.2.1"}}}
+	if err := collector.Collect(context.Background(), analysis); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

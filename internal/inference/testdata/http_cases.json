@@ -1,0 +1,87 @@
+{
+  "cases": [
+    {
+      "name": "redirect_https_termina_em_404",
+      "analysis": {
+        "host": "crashreport.example.test",
+        "dns_records": {},
+        "evidences": [],
+        "classification": "UNKNOWN",
+        "http_observations": {
+          "http": {"scheme": "http", "status_code": 301, "location": "https://crashreport.example.test/", "complete": true},
+          "https": {"scheme": "https", "status_code": 404, "response_kind": "RESOURCE_NOT_AVAILABLE", "complete": true}
+        },
+        "redirects": {
+          "http": {
+            "scheme": "http",
+            "final_url": "https://crashreport.example.test/",
+            "stopped_reason": "FINAL_RESPONSE",
+            "hops": [
+              {"index": 0, "url": "http://crashreport.example.test/", "hostname": "crashreport.example.test", "scheme": "http", "status_code": 301, "location": "https://crashreport.example.test/", "dns_status": "RESOLVED"},
+              {"index": 1, "url": "https://crashreport.example.test/", "hostname": "crashreport.example.test", "scheme": "https", "status_code": 404, "dns_status": "RESOLVED"}
+            ]
+          }
+        }
+      },
+      "expected_classification": "INSUFFICIENT_EVIDENCE",
+      "expected_state": "OBSERVATION",
+      "required_evidence": "HTTP_HTTPS_UPGRADE_PRESENT",
+      "forbidden_evidence": "DANGLING_REDIRECT"
+    },
+    {
+      "name": "bloqueio_cloudflare_403",
+      "analysis": {
+        "host": "sso.example.test",
+        "dns_records": {},
+        "evidences": [],
+        "classification": "UNKNOWN",
+        "http_observations": {
+          "http": {"scheme": "http", "status_code": 403, "server": "cloudflare", "response_kind": "EDGE_RESPONSE", "normalized_body": "YmxvY2tlZA==", "body_hash": "same", "body_length": 7, "complete": true},
+          "https": {"scheme": "https", "status_code": 403, "server": "cloudflare", "response_kind": "EDGE_RESPONSE", "normalized_body": "YmxvY2tlZA==", "body_hash": "same", "body_length": 7, "complete": true}
+        }
+      },
+      "expected_classification": "INSUFFICIENT_EVIDENCE",
+      "expected_state": "SUPPRESSED",
+      "required_evidence": "HTTP_EDGE_BLOCK"
+    },
+    {
+      "name": "login_disponivel_por_http",
+      "analysis": {
+        "host": "login.example.test",
+        "dns_records": {},
+        "evidences": [],
+        "classification": "UNKNOWN",
+        "http_observations": {
+          "http": {"scheme": "http", "status_code": 200, "content_type": "text/html", "response_kind": "APPLICATION_RESPONSE", "normalized_body": "PGh0bWw+PGJvZHk+PGZvcm0+PGlucHV0IHR5cGU9cGFzc3dvcmQ+PC9mb3JtPjwvYm9keT48L2h0bWw+", "body_hash": "same", "body_length": 60, "html_document": true, "password_form": true, "complete": true},
+          "https": {"scheme": "https", "status_code": 200, "content_type": "text/html", "response_kind": "APPLICATION_RESPONSE", "normalized_body": "PGh0bWw+PGJvZHk+PGZvcm0+PGlucHV0IHR5cGU9cGFzc3dvcmQ+PC9mb3JtPjwvYm9keT48L2h0bWw+", "body_hash": "same", "body_length": 60, "html_document": true, "password_form": true, "complete": true}
+        }
+      },
+      "expected_classification": "EXPOSED",
+      "expected_state": "CONFIRMED",
+      "required_evidence": "PLAINTEXT_AUTH_INTERFACE"
+    },
+    {
+      "name": "redirect_externo_nxdomain",
+      "analysis": {
+        "host": "app.example.test",
+        "dns_records": {},
+        "evidences": [],
+        "classification": "UNKNOWN",
+        "redirects": {
+          "https": {
+            "scheme": "https",
+            "final_url": "https://missing.vendor.test/",
+            "stopped_reason": "DESTINATION_NXDOMAIN",
+            "hops": [
+              {"index": 0, "url": "https://app.example.test/", "hostname": "app.example.test", "scheme": "https", "status_code": 302, "location": "https://missing.vendor.test/", "dns_status": "RESOLVED"},
+              {"index": 1, "url": "https://missing.vendor.test/", "hostname": "missing.vendor.test", "scheme": "https", "dns_status": "NXDOMAIN"}
+            ]
+          }
+        }
+      },
+      "expected_classification": "MISCONFIGURED",
+      "expected_state": "CANDIDATE",
+      "required_evidence": "DANGLING_REDIRECT"
+    }
+  ]
+}

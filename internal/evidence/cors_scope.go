@@ -16,8 +16,6 @@ type CORSScopeCollector struct {
 	allowedRoots map[string]struct{}
 }
 
-// SetAllowedRootDomains limita as sondagens related-domain aos domínios
-// registráveis incluídos explicitamente na entrada da varredura.
 func (c *CORSScopeCollector) SetAllowedRootDomains(hosts []string) {
 	c.allowedRoots = explicitRegistrableDomains(hosts)
 }
@@ -30,7 +28,7 @@ func (c *CORSScopeCollector) SetRequestLimiter(limiter ratelimit.Waiter) {
 
 func NewCORSScopeCollector(timeout time.Duration, clients ...*http.Client) *CORSScopeCollector {
 	if len(clients) > 0 && clients[0] != nil {
-		return &CORSScopeCollector{client: clients[0]}
+		return &CORSScopeCollector{client: noRedirectClient(clients[0])}
 	}
 	return &CORSScopeCollector{
 		client: &http.Client{
@@ -73,10 +71,7 @@ func (c *CORSScopeCollector) Collect(ctx context.Context, analysis *core.HostAna
 	allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 	allowCreds := resp.Header.Get("Access-Control-Allow-Credentials")
 
-	// O nome do campo é mantido por compatibilidade com a saída estruturada. Ele
-	// só representa impacto de sessão quando a origem candidata é refletida de
-	// forma exata e o navegador pode enviar credenciais. Um curinga nunca atende
-	// a esse requisito, mesmo se o servidor também enviar ACAC: true.
+	// ParentCORSWildcard é mantido por compatibilidade com a saída estruturada.
 	if allowOrigin == candidateOrigin && strings.TrimSpace(allowCreds) == "true" {
 		analysis.ParentCORSWildcard = true
 		analysis.AddEvidence(core.Evidence{

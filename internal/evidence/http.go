@@ -50,6 +50,7 @@ type HTTPCollector struct {
 	secChUAPlatform  string
 	secChUA          string
 	configurationErr error
+	targetHeaders    map[string]http.Header
 }
 
 func NewHTTPCollector(sigs []signatures.Fingerprint, timeout time.Duration, proxyURL string, followRedirects bool, userAgent string, fetchHeaders bool) *HTTPCollector {
@@ -181,6 +182,13 @@ func (c *HTTPCollector) SetTransport(rt http.RoundTripper) {
 	}
 }
 
+func (c *HTTPCollector) SetTargetHeaders(headers map[string]http.Header) {
+	c.targetHeaders = make(map[string]http.Header, len(headers))
+	for host, values := range headers {
+		c.targetHeaders[strings.ToLower(host)] = values.Clone()
+	}
+}
+
 func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis) error {
 	if err := c.Validate(); err != nil {
 		return err
@@ -207,6 +215,19 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 		}
 		if c.secChUA != "" {
 			req.Header.Set("Sec-CH-UA", c.secChUA)
+		}
+		if headers := c.targetHeaders[strings.ToLower(analysis.Host)]; headers != nil {
+			if custom := headers.Get("User-Agent"); custom != "" && custom != c.userAgent {
+				req.Header.Del("Sec-CH-UA")
+				req.Header.Del("Sec-CH-UA-Platform")
+				req.Header.Del("Sec-CH-UA-Mobile")
+			}
+			for name, values := range headers {
+				req.Header.Del(name)
+				for _, value := range values {
+					req.Header.Add(name, value)
+				}
+			}
 		}
 
 		start := time.Now()
@@ -279,10 +300,20 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 			Description: fmt.Sprintf("Recebido status %d no protocolo %s", statusCode, proto),
 			Weight:      0,
 			Metadata: map[string]string{
-				"status":    fmt.Sprintf("%d", statusCode),
-				"title":     observation.Title,
-				"body_hash": observation.BodyHash,
+				"status":        fmt.Sprintf("%d", statusCode),
+				"title":         observation.Title,
+				"content_type":  observation.ContentType,
+				"body_hash":     observation.BodyHash,
+				"body_length":   fmt.Sprintf("%d", observation.BodyLength),
+				"server":        observation.Server,
+				"location":      observation.Location,
+				"response_kind": observation.ResponseKind,
 			},
+		})
+		analysis.AddEvidence(core.Evidence{
+			Type: observation.ResponseKind, Source: proto,
+			Description: fmt.Sprintf("A resposta %s foi classificada como %s.", proto, observation.ResponseKind),
+			Weight:      0, Confidence: 95,
 		})
 
 		// 404 é um clássico indicador
@@ -291,7 +322,8 @@ func (c *HTTPCollector) Collect(ctx context.Context, analysis *core.HostAnalysis
 				Type:        "HTTP_STATUS_404",
 				Source:      proto,
 				Description: "O código de status 404 pode indicar um recurso ausente no provedor",
-				Weight:      10, // Alterado de 1 para 10.
+				Weight:      0,
+				Confidence:  100,
 			})
 		}
 

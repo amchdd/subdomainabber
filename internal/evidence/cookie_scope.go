@@ -20,8 +20,6 @@ type CookieScopeCollector struct {
 	allowedRoots map[string]struct{}
 }
 
-// SetAllowedRootDomains limita as sondagens related-domain aos domínios
-// registráveis incluídos explicitamente na entrada da varredura.
 func (c *CookieScopeCollector) SetAllowedRootDomains(hosts []string) {
 	c.allowedRoots = explicitRegistrableDomains(hosts)
 }
@@ -34,7 +32,7 @@ func (c *CookieScopeCollector) SetRequestLimiter(limiter ratelimit.Waiter) {
 
 func NewCookieScopeCollector(timeout time.Duration, clients ...*http.Client) *CookieScopeCollector {
 	if len(clients) > 0 && clients[0] != nil {
-		return &CookieScopeCollector{client: clients[0]}
+		return &CookieScopeCollector{client: noRedirectClient(clients[0])}
 	}
 	return &CookieScopeCollector{
 		client: &http.Client{
@@ -67,6 +65,7 @@ func (c *CookieScopeCollector) Collect(ctx context.Context, analysis *core.HostA
 	}
 	if cached, ok := c.cache.Load(rootDomain); ok {
 		analysis.ParentCookieScope = cached.(bool)
+		addCookieScopeEvidence(analysis, rootDomain)
 		return nil
 	}
 
@@ -82,8 +81,21 @@ func (c *CookieScopeCollector) Collect(ctx context.Context, analysis *core.HostA
 	})
 	if value != nil {
 		analysis.ParentCookieScope = value.(bool)
+		addCookieScopeEvidence(analysis, rootDomain)
 	}
 	return nil
+}
+
+func addCookieScopeEvidence(analysis *core.HostAnalysis, root string) {
+	if !analysis.ParentCookieScope || hasEvidenceType(analysis.Evidences, "RELATED_DOMAIN_COOKIE_SCOPE") {
+		return
+	}
+	analysis.AddEvidence(core.Evidence{
+		Type: "RELATED_DOMAIN_COOKIE_SCOPE", Source: root,
+		Description: "O domínio registrável define cookie com escopo que inclui o subdomínio candidato.",
+		Weight:      0, Confidence: 100,
+		Metadata: map[string]string{"domain": root},
+	})
 }
 
 func (c *CookieScopeCollector) inspectRootCookieScope(ctx context.Context, rootDomain string) bool {
@@ -99,7 +111,6 @@ func (c *CookieScopeCollector) inspectRootCookieScope(ctx context.Context, rootD
 
 	cookies := resp.Header.Values("Set-Cookie")
 	for _, cookie := range cookies {
-		// Ex.: "session=123; Domain=.example.com; Path=/"
 		parts := strings.Split(cookie, ";")
 		for _, p := range parts {
 			p = strings.TrimSpace(p)
