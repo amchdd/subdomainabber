@@ -25,7 +25,7 @@ Consulte [docs/BRANCHING.md](docs/BRANCHING.md) para o fluxo completo.
 
 ## Ambiente de desenvolvimento
 
-Use Go 1.26.5 ou superior:
+Use a versão mínima de Go declarada em `go.mod` (atualmente 1.26.6):
 
 ```bash
 go mod download
@@ -74,7 +74,7 @@ Antes de criar uma versão, mantenha a mesma versão semântica no `CHANGELOG.md
 
 Consolide a versão em `dev`, abra um pull request de `dev` para `main` e faça o merge somente com a CI verde. Depois, crie a tag no formato `vMAJOR.MINOR.PATCH` ou com um sufixo de pré-lançamento, como `v0.2.0-alpha`, a partir de `main`.
 
-O fluxo de lançamento valida a tag, compila os pacotes para as plataformas suportadas, gera as somas de verificação e publica versões com sufixo `alpha` ou `beta` como pré-lançamentos. Não anuncie uma versão antes da conclusão bem-sucedida desse fluxo.
+Acrescente as notas em `docs/releases/<tag>.md`. O fluxo de lançamento verifica se a tag pertence à `main`, confere a versão do binário e a seção do changelog, compila os pacotes e gera as somas de verificação. Qualquer sufixo de pré-lançamento SemVer é publicado como pré-lançamento no GitHub. Não anuncie uma versão antes da conclusão bem-sucedida desse fluxo.
 
 ## Solicitações de alteração
 

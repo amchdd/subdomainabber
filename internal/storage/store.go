@@ -21,6 +21,43 @@ type Store struct {
 	mu sync.RWMutex
 }
 
+type webContext struct {
+	HTTPObservations map[string]core.HTTPObservation `json:"http_observations,omitempty"`
+	HTTPCorrelation  *core.HTTPCorrelation           `json:"http_correlation,omitempty"`
+	Redirects        map[string]core.RedirectChain   `json:"redirects,omitempty"`
+	Inferences       []core.Inference                `json:"inferences,omitempty"`
+	Decision         *core.Decision                  `json:"decision,omitempty"`
+	ResultState      core.ResultState                `json:"result_state"`
+}
+
+func webContextFrom(analysis *core.HostAnalysis) webContext {
+	return webContext{
+		HTTPObservations: analysis.HTTPObservations,
+		HTTPCorrelation:  analysis.HTTPCorrelation,
+		Redirects:        analysis.Redirects,
+		Inferences:       analysis.Inferences,
+		Decision:         analysis.Decision,
+		ResultState:      analysis.ResultState,
+	}
+}
+
+func restoreWebContext(analysis *core.HostAnalysis, data string) error {
+	if strings.TrimSpace(data) == "" || data == "{}" || data == "null" {
+		return nil
+	}
+	var context webContext
+	if err := json.Unmarshal([]byte(data), &context); err != nil {
+		return err
+	}
+	analysis.HTTPObservations = context.HTTPObservations
+	analysis.HTTPCorrelation = context.HTTPCorrelation
+	analysis.Redirects = context.Redirects
+	analysis.Inferences = context.Inferences
+	analysis.Decision = context.Decision
+	analysis.ResultState = context.ResultState
+	return nil
+}
+
 // GetDB retorna a conexão bruta com o banco de dados para consultas avançadas.
 func (s *Store) GetDB() *sql.DB {
 	return s.db
@@ -55,6 +92,7 @@ func New(dbPath string) (*Store, error) {
 		evidences      TEXT,
 		tested_vectors TEXT NOT NULL DEFAULT '[]',
 		scan_profile   TEXT NOT NULL DEFAULT 'null',
+		web_context    TEXT NOT NULL DEFAULT '{}',
 		first_seen     DATETIME DEFAULT CURRENT_TIMESTAMP,
 		last_seen      DATETIME DEFAULT CURRENT_TIMESTAMP,
 		previous_classification TEXT DEFAULT '',
@@ -141,6 +179,7 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE hosts ADD COLUMN confidence_score INTEGER DEFAULT 0;`,
 		`ALTER TABLE hosts ADD COLUMN tested_vectors TEXT NOT NULL DEFAULT '[]';`,
 		`ALTER TABLE hosts ADD COLUMN scan_profile TEXT NOT NULL DEFAULT 'null';`,
+		`ALTER TABLE hosts ADD COLUMN web_context TEXT NOT NULL DEFAULT '{}';`,
 		`ALTER TABLE unknown_providers ADD COLUMN example_hosts TEXT DEFAULT '[]';`,
 		`ALTER TABLE unknown_providers ADD COLUMN last_discovery_score REAL DEFAULT 0.0;`,
 	}
@@ -197,6 +236,10 @@ func (s *Store) SaveAnalysis(a *core.HostAnalysis) error {
 	if err != nil {
 		return fmt.Errorf("serializando perfil da varredura: %w", err)
 	}
+	webContextJSON, err := json.Marshal(webContextFrom(a))
+	if err != nil {
+		return fmt.Errorf("serializando contexto HTTP: %w", err)
+	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -206,8 +249,8 @@ func (s *Store) SaveAnalysis(a *core.HostAnalysis) error {
 
 	_, err = tx.Exec(
 		`INSERT INTO hosts (
-			host, classification, risk_score, mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile, first_seen, last_seen, previous_classification, last_state_change
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '', CURRENT_TIMESTAMP)
+			host, classification, risk_score, mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile, web_context, first_seen, last_seen, previous_classification, last_state_change
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '', CURRENT_TIMESTAMP)
 		 ON CONFLICT(host) DO UPDATE SET
 			previous_classification = CASE 
 				WHEN hosts.classification != excluded.classification THEN hosts.classification 
@@ -225,8 +268,9 @@ func (s *Store) SaveAnalysis(a *core.HostAnalysis) error {
 			evidences = excluded.evidences,
 			tested_vectors = excluded.tested_vectors,
 			scan_profile = excluded.scan_profile,
+			web_context = excluded.web_context,
 			last_seen = CURRENT_TIMESTAMP`,
-		a.Host, a.Classification, a.RiskScore, a.MitigationScore, a.ConfidenceScore, string(dnsJSON), string(evidencesJSON), string(testedVectorsJSON), string(scanProfileJSON),
+		a.Host, a.Classification, a.RiskScore, a.MitigationScore, a.ConfidenceScore, string(dnsJSON), string(evidencesJSON), string(testedVectorsJSON), string(scanProfileJSON), string(webContextJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("inserindo ou atualizando host: %w", err)
@@ -354,15 +398,15 @@ func (s *Store) GetHost(ctx context.Context, host string) (*core.HostAnalysis, e
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	row := s.db.QueryRowContext(ctx, `SELECT host, classification, previous_classification, risk_score,
-		mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile,
+		mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile, web_context,
 		first_seen, last_seen, last_state_change FROM hosts WHERE host = ?`, host)
 	var analysis core.HostAnalysis
-	var dnsText, evidenceText, vectorsText, profileText string
+	var dnsText, evidenceText, vectorsText, profileText, webText string
 	var firstSeen, lastSeen, lastChange time.Time
 	if err := row.Scan(
 		&analysis.Host, &analysis.Classification, &analysis.PreviousClassification,
 		&analysis.RiskScore, &analysis.MitigationScore, &analysis.ConfidenceScore,
-		&dnsText, &evidenceText, &vectorsText, &profileText,
+		&dnsText, &evidenceText, &vectorsText, &profileText, &webText,
 		&firstSeen, &lastSeen, &lastChange,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -384,6 +428,9 @@ func (s *Store) GetHost(ctx context.Context, host string) (*core.HostAnalysis, e
 			return nil, fmt.Errorf("decodificando perfil de %s: %w", host, err)
 		}
 	}
+	if err := restoreWebContext(&analysis, webText); err != nil {
+		return nil, fmt.Errorf("decodificando contexto HTTP de %s: %w", host, err)
+	}
 	analysis.FirstSeen = firstSeen
 	analysis.LastSeen = lastSeen
 	analysis.LastStateChange = lastChange
@@ -395,7 +442,7 @@ func (s *Store) GetAllHosts(ctx context.Context, opts QueryOptions) ([]core.Host
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT host, classification, previous_classification, risk_score, mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile, first_seen, last_seen, last_state_change FROM hosts WHERE 1=1`
+	query := `SELECT host, classification, previous_classification, risk_score, mitigation_score, confidence_score, dns_records, evidences, tested_vectors, scan_profile, web_context, first_seen, last_seen, last_state_change FROM hosts WHERE 1=1`
 	var args []interface{}
 
 	if opts.OnlyRisky {
@@ -420,10 +467,10 @@ func (s *Store) GetAllHosts(ctx context.Context, opts QueryOptions) ([]core.Host
 	var results []core.HostAnalysis
 	for rows.Next() {
 		var a core.HostAnalysis
-		var dnsText, evText, testedVectorsText, scanProfileText string
+		var dnsText, evText, testedVectorsText, scanProfileText, webText string
 		var firstSeen, lastSeen, lastChange time.Time
 
-		err := rows.Scan(&a.Host, &a.Classification, &a.PreviousClassification, &a.RiskScore, &a.MitigationScore, &a.ConfidenceScore, &dnsText, &evText, &testedVectorsText, &scanProfileText, &firstSeen, &lastSeen, &lastChange)
+		err := rows.Scan(&a.Host, &a.Classification, &a.PreviousClassification, &a.RiskScore, &a.MitigationScore, &a.ConfidenceScore, &dnsText, &evText, &testedVectorsText, &scanProfileText, &webText, &firstSeen, &lastSeen, &lastChange)
 		if err != nil {
 			return nil, fmt.Errorf("lendo host persistido: %w", err)
 		}
@@ -441,6 +488,9 @@ func (s *Store) GetAllHosts(ctx context.Context, opts QueryOptions) ([]core.Host
 			if err := json.Unmarshal([]byte(scanProfileText), &a.ScanProfile); err != nil {
 				return nil, fmt.Errorf("decodificando perfil da varredura de %s: %w", a.Host, err)
 			}
+		}
+		if err := restoreWebContext(&a, webText); err != nil {
+			return nil, fmt.Errorf("decodificando contexto HTTP de %s: %w", a.Host, err)
 		}
 
 		a.FirstSeen = firstSeen

@@ -1,46 +1,78 @@
 package discovery
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
-// DefaultAlterationWords reúne prefixos e sufixos comuns de ambientes.
-var DefaultAlterationWords = []string{
-	"dev", "api", "staging", "test", "prod", "v1", "v2", "admin", "app", "web", "internal",
-}
+var wordFamilies = [][]string{environmentWords, regionWords}
 
-// GenerateMutations cria subdomínios permutados a partir de um subdomínio base.
-func GenerateMutations(baseDomain, subDomain string, words []string) []string {
-	if words == nil {
-		words = DefaultAlterationWords
-	}
-
-	// Remove o domínio raiz de subDomain, quando presente.
-	sub := strings.TrimSuffix(subDomain, "."+baseDomain)
-	if sub == baseDomain || sub == "" {
+func GenerateMutations(root, name string, words []string) []string {
+	root = normalizeName(root)
+	name = normalizeName(name)
+	if root == "" || name == "" || name == root || !belongsToDomain(name, root) {
 		return nil
 	}
 
-	parts := strings.Split(sub, ".")
-	var mutations []string
+	label, parent := firstLabel(name)
+	relative := strings.TrimSuffix(name, "."+root)
+	labels := strings.Split(relative, ".")
+	seen := make(map[string]struct{})
+	var result []string
+	add := func(candidate string) {
+		candidate = normalizeName(candidate)
+		if candidate == "" || candidate == name || !belongsToDomain(candidate, root) {
+			return
+		}
+		if _, found := seen[candidate]; found {
+			return
+		}
+		seen[candidate] = struct{}{}
+		result = append(result, candidate)
+	}
 
 	for _, word := range words {
-		// Acrescenta o termo com hífen.
-		mutations = append(mutations, fmt.Sprintf("%s-%s.%s", sub, word, baseDomain))
-		// Antecede o termo com hífen.
-		mutations = append(mutations, fmt.Sprintf("%s-%s.%s", word, sub, baseDomain))
-
-		// Se o subdomínio tiver partes, percorre cada uma delas
-		// (ex.: api.dev -> test.api.dev, api.test.dev).
-		for i := 0; i <= len(parts); i++ {
-			newParts := make([]string, 0, len(parts)+1)
-			newParts = append(newParts, parts[:i]...)
-			newParts = append(newParts, word)
-			newParts = append(newParts, parts[i:]...)
-			mutations = append(mutations, fmt.Sprintf("%s.%s", strings.Join(newParts, "."), baseDomain))
+		add(label + "-" + word + "." + parent)
+		add(word + "-" + label + "." + parent)
+		for index := 0; index <= len(labels); index++ {
+			changed := make([]string, 0, len(labels)+1)
+			changed = append(changed, labels[:index]...)
+			changed = append(changed, word)
+			changed = append(changed, labels[index:]...)
+			add(strings.Join(changed, ".") + "." + root)
 		}
 	}
 
-	return mutations
+	parts := strings.Split(label, "-")
+	for index, part := range parts {
+		for _, family := range wordFamilies {
+			if !containsWord(family, part) {
+				continue
+			}
+			for _, replacement := range family {
+				changed := append([]string(nil), parts...)
+				changed[index] = replacement
+				add(strings.Join(changed, "-") + "." + parent)
+			}
+		}
+	}
+	for index, current := range labels {
+		for _, family := range wordFamilies {
+			if !containsWord(family, current) {
+				continue
+			}
+			for _, replacement := range family {
+				changed := append([]string(nil), labels...)
+				changed[index] = replacement
+				add(strings.Join(changed, ".") + "." + root)
+			}
+		}
+	}
+	return result
+}
+
+func containsWord(words []string, target string) bool {
+	for _, word := range words {
+		if word == target {
+			return true
+		}
+	}
+	return false
 }

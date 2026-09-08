@@ -11,7 +11,7 @@ A segurança do Subdomainabber inclui o próprio código, os workflows de CI e r
 | Branch `dev` e branches de trabalho | Melhor esforço, sem garantia de estabilidade |
 | Releases anteriores | Não, salvo indicação explícita no changelog |
 
-Durante a fase alpha, correções de segurança podem incluir mudanças incompatíveis na CLI, na configuração, no banco local ou nos critérios de classificação.
+Mudanças incompatíveis na CLI, na configuração, no banco local ou nos critérios de classificação são registradas no changelog e nas notas de migração da release.
 
 ## Como relatar uma vulnerabilidade
 

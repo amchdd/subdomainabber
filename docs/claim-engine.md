@@ -1,6 +1,6 @@
 # Motor de reivindicação agressiva
 
-A reivindicação automática da versão de desenvolvimento `v0.1.0-alpha` é uma operação explícita que altera estado externo. Ela não é habilitada por `--check-all`, `--evasion`, `verify` nem por qualquer comando de leitura.
+A reivindicação automática é uma operação explícita que altera estado externo. Ela não é habilitada por `--check-all`, `--evasion`, `verify` nem por qualquer comando de leitura.
 
 ## Condições obrigatórias
 

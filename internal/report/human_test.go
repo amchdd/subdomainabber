@@ -152,7 +152,7 @@ func TestHumanFallbackShowsCausalHTTPMisconfiguration(t *testing.T) {
 		"Evidência principal",
 		"HTTP_HSTS_MISSING",
 		"cabeçalho Strict-Transport-Security ausente",
-		"Confiança da análise: ALTA",
+		"Confiança da classificação: ALTA",
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("fallback não contém %q:\n%s", expected, output)
@@ -190,7 +190,30 @@ func TestHumanPreservesTechnicalEvidenceIdentifiers(t *testing.T) {
 	if !strings.Contains(output, "HTTP_CSP_MISSING") {
 		t.Fatalf("ID técnico da evidência foi alterado:\n%s", output)
 	}
-	if !strings.Contains(output, "Confiança da análise: BAIXA") {
+	if !strings.Contains(output, "Confiança da classificação: BAIXA") {
 		t.Fatalf("confiança não foi apresentada em português:\n%s", output)
+	}
+}
+
+func TestHumanExplainsSuppressedHTTPResult(t *testing.T) {
+	analysis := &core.HostAnalysis{
+		Host: "sso.example.test", Classification: classification.LevelInsufficientEvidence,
+		ResultState: core.ResultSuppressed,
+		Decision: &core.Decision{
+			State: core.ResultSuppressed, Rule: "EDGE_BLOCKED_NO_EXPOSURE",
+			ReasonCodes:           []string{"HTTP_NO_HTTPS_UPGRADE", "HTTP_STATUS_403", "EDGE_RESPONSE"},
+			ObservationConfidence: 100, ClassificationConfidence: 95, ImpactConfidence: 0,
+		},
+		Evidences: []core.Evidence{{Type: "HTTP_EDGE_BLOCK", Source: "INFERENCE", Confidence: 95}},
+	}
+	output := Human(analysis, "LOW")
+	for _, expected := range []string{
+		"[SUPRIMIDO]", "borda bloqueada sem exposição", "HTTP sem upgrade para HTTPS",
+		"Confiança da observação: 100%", "Confiança da classificação: 95%", "Confiança do impacto: 0%",
+		"Impacto confirmado: não", "nenhuma ação sugerida",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("saída suprimida não contém %q:\n%s", expected, output)
+		}
 	}
 }

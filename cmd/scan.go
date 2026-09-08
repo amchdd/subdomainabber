@@ -194,7 +194,7 @@ func init() {
 	scanCmd.Flags().BoolVarP(&scanQuiet, "quiet", "q", false, "Exibe apenas hosts com achados relevantes (takeover, exposição ou configuração quebrada)")
 	scanCmd.Flags().BoolVar(&scanExplain, "explain", false, "Exibe o detalhamento de como a classificação e a pontuação foram calculadas")
 	scanCmd.Flags().BoolVar(&scanExplainJ, "explain-json", false, "Exibe a explicação matemática e sintética estruturada em JSON")
-	scanCmd.Flags().BoolVar(&scanShowInconclusive, "show-inconclusive", false, "Exibe blocos humanos para UNKNOWN e INSUFFICIENT_EVIDENCE")
+	scanCmd.Flags().BoolVar(&scanShowInconclusive, "show-inconclusive", false, "Exibe observações, resultados suprimidos e análises inconclusivas")
 	scanCmd.Flags().StringVar(&scanMinSeverity, "min-severity", "", "Severidade mínima do CLI: info, low, medium, high ou critical (vazio = todos os achados)")
 	scanCmd.Flags().StringVar(&scanFailOn, "fail-on-severity", "", "Encerra com código diferente de zero ao encontrar a severidade informada")
 	scanCmd.Flags().IntVarP(&scanConcurrency, "concurrency", "c", 0, "Número de hosts processados simultaneamente (0 = usa configuração ou padrão de 50)")
@@ -580,10 +580,9 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 		evidence.NewTXTResidualCollector(),
 		evidence.NewProviderHistoryCollector(),
 	}
-	var redirectCollector *evidence.RedirectCollector
 	if cfg.FollowRedirects {
-		redirectCollector = evidence.NewRedirectCollector(res, globalClient, cfg.RedirectDepth)
-		redirectCollector.SetAllowedHosts(webHosts)
+		redirectCollector := evidence.NewRedirectCollector(res, globalClient, cfg.RedirectDepth)
+		redirectCollector.SetSignatures(allSignatures)
 		collectors = append(collectors, redirectCollector)
 	}
 	collectors = append(collectors, evidence.NewHTTPPostureCollector())
@@ -724,9 +723,6 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 	}
 	if resumeID == "" {
 		webHosts = appendUniqueDomains(domains, related)
-	}
-	if redirectCollector != nil {
-		redirectCollector.SetAllowedHosts(webHosts)
 	}
 	if depsCollector != nil {
 		depsCollector.SetAllowedHosts(related)
@@ -878,9 +874,9 @@ func runScan(ctx context.Context, domains, claimTargets []string, sessions ...*s
 				snapshot.Completed, snapshot.Skipped, snapshot.Failed, snapshot.Canceled, snapshot.NotStarted)
 		} else {
 			if snapshot.Processed == 1 {
-				logInfo("\n[*] Varredura concluída. 1 host processado, %d achados relevantes encontrados.\n", found)
+				logInfo("\n[*] Varredura concluída. 1 host processado, %d resultados priorizados encontrados.\n", found)
 			} else {
-				logInfo("\n[*] Varredura concluída. %d hosts processados, %d achados relevantes encontrados.\n", snapshot.Processed, found)
+				logInfo("\n[*] Varredura concluída. %d hosts processados, %d resultados priorizados encontrados.\n", snapshot.Processed, found)
 			}
 		}
 		logInfo("%s\n", formatScanBreakdown(snapshot))
@@ -1227,7 +1223,7 @@ func processDomain(
 	if analysis.Delegation != nil && hasDelegationFinding(analysis) {
 		suppressDelegation = !outputDeduper.First("NS|" + analysis.Delegation.Zone)
 	}
-	relevant := isActionableClassification(analysis.Classification)
+	relevant := isPrioritizedResult(analysis.ResultState)
 	visible := relevant && cliSeverityAllows(analysis.Classification, scanMinSeverity)
 	countable := visible && !(suppressDelegation && isDelegationClassification(analysis.Classification))
 
@@ -1248,17 +1244,25 @@ func processDomain(
 		fmt.Println(string(data))
 	} else if scanExplainJ {
 		type ExplainOutput struct {
-			Host            string          `json:"host"`
-			Classification  string          `json:"classification"`
-			RiskScore       int             `json:"risk_score"`
-			MitigationScore int             `json:"mitigation_score"`
-			ConfidenceScore int             `json:"confidence_score"`
-			Positive        []core.Evidence `json:"positive_evidences"`
-			Negative        []core.Evidence `json:"negative_evidences"`
+			Host            string                `json:"host"`
+			Classification  string                `json:"classification"`
+			ResultState     core.ResultState      `json:"result_state"`
+			Decision        *core.Decision        `json:"decision,omitempty"`
+			Inferences      []core.Inference      `json:"inferences,omitempty"`
+			HTTPCorrelation *core.HTTPCorrelation `json:"http_correlation,omitempty"`
+			RiskScore       int                   `json:"risk_score"`
+			MitigationScore int                   `json:"mitigation_score"`
+			ConfidenceScore int                   `json:"confidence_score"`
+			Positive        []core.Evidence       `json:"positive_evidences"`
+			Negative        []core.Evidence       `json:"negative_evidences"`
 		}
 		out := ExplainOutput{
 			Host:            analysis.Host,
 			Classification:  analysis.Classification,
+			ResultState:     analysis.ResultState,
+			Decision:        analysis.Decision,
+			Inferences:      analysis.Inferences,
+			HTTPCorrelation: analysis.HTTPCorrelation,
 			RiskScore:       analysis.RiskScore,
 			MitigationScore: analysis.MitigationScore,
 			ConfidenceScore: analysis.ConfidenceScore,
@@ -1276,14 +1280,21 @@ func processDomain(
 		fmt.Printf("\n========================================\n")
 		fmt.Printf("MODO DE EXPLICAÇÃO: %s\n", analysis.Host)
 		fmt.Printf("========================================\n")
-		fmt.Printf("%s — Confiança: %s\n\n",
+		fmt.Printf("%s — Estado do resultado: %s\n\n",
 			color.ColorizeClassificationLabelWith(analysis.Classification, presentation.Classification(analysis.Classification), useColor),
-			verdict.Label,
+			presentation.Value(string(analysis.ResultState)),
 		)
 
 		fmt.Printf("Pontuação de cobertura    : %.1f%%\n", analysis.CoverageScore)
 		fmt.Printf("Pontuação de conhecimento : %.1f%%\n", analysis.KnowledgeScore)
-		fmt.Printf("Confiança                  : %s\n\n", verdict.Label)
+		if analysis.Decision != nil {
+			fmt.Printf("Confiança da observação    : %d%%\n", analysis.Decision.ObservationConfidence)
+			fmt.Printf("Confiança da classificação : %d%%\n", analysis.Decision.ClassificationConfidence)
+			fmt.Printf("Confiança do impacto       : %d%%\n", analysis.Decision.ImpactConfidence)
+			fmt.Printf("Impacto confirmado         : %t\n\n", analysis.Decision.ImpactConfirmed)
+		} else {
+			fmt.Printf("Confiança da classificação : %s\n\n", verdict.Label)
+		}
 
 		known := make(map[string]bool)
 		for _, ev := range analysis.Evidences {
@@ -1345,10 +1356,11 @@ func processDomain(
 	return domainResult{
 		Outcome:        outcome,
 		Classification: analysis.Classification,
-		Actionable:     countable,
+		ResultState:    analysis.ResultState,
+		ResultReason:   decisionRule(analysis),
 		FatalErr:       fatalClaimErr,
 		Candidates:     append([]string(nil), analysis.SANCandidates...),
-		PolicyMatch:    scanFailOn != "" && isActionableClassification(analysis.Classification) && cliSeverityAllows(analysis.Classification, scanFailOn),
+		PolicyMatch:    scanFailOn != "" && isPrioritizedResult(analysis.ResultState) && cliSeverityAllows(analysis.Classification, scanFailOn),
 	}
 }
 
@@ -1453,11 +1465,15 @@ func isDelegationClassification(level string) bool {
 	}
 }
 
-func isActionableClassification(level string) bool {
-	return level != "" &&
-		level != classification.LevelHealthy &&
-		level != classification.LevelUnknown &&
-		level != classification.LevelInsufficientEvidence
+func isPrioritizedResult(state core.ResultState) bool {
+	return state == core.ResultCandidate || state == core.ResultConfirmed
+}
+
+func decisionRule(analysis *core.HostAnalysis) string {
+	if analysis == nil || analysis.Decision == nil {
+		return ""
+	}
+	return analysis.Decision.Rule
 }
 
 func cliSeverityAllows(level, minimum string) bool {

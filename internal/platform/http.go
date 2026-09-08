@@ -29,7 +29,17 @@ func newAPIClient(client *http.Client, base string, auth func(*http.Request)) *a
 		client = http.DefaultClient
 	}
 	parsed, _ := url.Parse(strings.TrimRight(base, "/"))
-	return &apiClient{http: client, base: parsed, auth: auth}
+	copy := *client
+	copy.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if parsed == nil || !strings.EqualFold(request.URL.Scheme, parsed.Scheme) || !strings.EqualFold(request.URL.Host, parsed.Host) || len(via) >= 10 {
+			return http.ErrUseLastResponse
+		}
+		if client.CheckRedirect != nil {
+			return client.CheckRedirect(request, via)
+		}
+		return nil
+	}
+	return &apiClient{http: &copy, base: parsed, auth: auth}
 }
 
 func (client *apiClient) get(ctx context.Context, path string, output any) error {
@@ -72,9 +82,9 @@ func (client *apiClient) get(ctx context.Context, path string, output any) error
 			}
 			return nil
 		}
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		response.Body.Close()
-		lastError = fmt.Errorf("%s retornou HTTP %d: %s", endpoint.Path, response.StatusCode, strings.TrimSpace(string(body)))
+		lastError = fmt.Errorf("%s retornou HTTP %d", endpoint.Path, response.StatusCode)
 		if !retryable(response.StatusCode) || attempt+1 == maxAttempts {
 			return lastError
 		}

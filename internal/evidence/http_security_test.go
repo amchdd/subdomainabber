@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/amchdd/subdomainabber/internal/classification"
 	"github.com/amchdd/subdomainabber/internal/core"
 )
 
@@ -38,16 +39,20 @@ func TestHTTPSecurityHeadersModeDoesNotSendRedirectProbes(t *testing.T) {
 func TestHTTPSecurityHeadersUsesHTTPSObservationWithoutExportedHeaders(t *testing.T) {
 	analysis := &core.HostAnalysis{Host: "secure.example.com"}
 	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusOK,
-		http.Header{"Strict-Transport-Security": {"max-age=31536000"}}, []byte("ok"), true, 0, "", ""))
+		http.Header{"Strict-Transport-Security": {"max-age=31536000"}, "Content-Type": {"text/html"}}, []byte("<!doctype html><html><body>ok</body></html>"), true, 0, "", ""))
 
 	collector := NewHttpSecurityCollectorForChecks(true, false)
 	if err := collector.Collect(context.Background(), analysis); err != nil {
 		t.Fatal(err)
 	}
-	if _, found := findEvidence(analysis, "HTTP_HSTS_MISSING"); found {
+	classification.Process(analysis)
+	if _, found := findEvidence(analysis, "HTTPS_HSTS_ABSENT"); found {
 		t.Fatal("present HSTS was reported missing")
 	}
-	if _, found := findEvidence(analysis, "HTTP_CSP_MISSING"); !found {
+	if evidence, found := findEvidence(analysis, "HTTPS_HSTS_PRESENT"); !found || evidence.Metadata["max_age"] != "31536000" {
+		t.Fatalf("postura HSTS incompleta: %+v", evidence)
+	}
+	if _, found := findEvidence(analysis, "HTTPS_CSP_ABSENT"); !found {
 		t.Fatal("missing CSP was not detected from the HTTPS baseline")
 	}
 }

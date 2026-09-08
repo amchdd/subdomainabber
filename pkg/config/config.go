@@ -121,17 +121,18 @@ type Config struct {
 	FetchHeaders    bool   `yaml:"headers"`
 
 	// Tokens de APIs passivas e de nuvem
-	AlienVaultToken   string `yaml:"alienvault_token"`
-	CertSpotterToken  string `yaml:"certspotter_token"`
-	AwsAccessKey      string `yaml:"aws_access_key"`
-	AwsSecretKey      string `yaml:"aws_secret_key"`
-	AwsSessionToken   string `yaml:"aws_session_token"`
-	AwsRegion         string `yaml:"aws_region"`
-	UrlscanToken      string `yaml:"urlscan_token"`
-	HackerOneUsername string `yaml:"hackerone_username"`
-	HackerOneToken    string `yaml:"hackerone_token"`
-	IntigritiToken    string `yaml:"intigriti_token"`
-	BugcrowdToken     string `yaml:"bugcrowd_token"`
+	AlienVaultToken     string `yaml:"alienvault_token"`
+	CertSpotterToken    string `yaml:"certspotter_token"`
+	AwsAccessKey        string `yaml:"aws_access_key"`
+	AwsSecretKey        string `yaml:"aws_secret_key"`
+	AwsSessionToken     string `yaml:"aws_session_token"`
+	AwsRegion           string `yaml:"aws_region"`
+	UrlscanToken        string `yaml:"urlscan_token"`
+	SecurityTrailsToken string `yaml:"securitytrails_token"`
+	HackerOneUsername   string `yaml:"hackerone_username"`
+	HackerOneToken      string `yaml:"hackerone_token"`
+	IntigritiToken      string `yaml:"intigriti_token"`
+	BugcrowdToken       string `yaml:"bugcrowd_token"`
 
 	// Estas marcas distinguem um zero ausente de um zero escrito
 	// explicitamente no YAML. Assim, a validação rejeita valores inseguros em
@@ -371,6 +372,9 @@ func ApplyEnv(cfg *Config) error {
 	if v := os.Getenv("SABBER_URLSCAN_TOKEN"); v != "" {
 		cfg.UrlscanToken = v
 	}
+	if v := os.Getenv("SABBER_SECURITYTRAILS_TOKEN"); v != "" {
+		cfg.SecurityTrailsToken = v
+	}
 	if v := os.Getenv("SABBER_HACKERONE_USERNAME"); v != "" {
 		cfg.HackerOneUsername = v
 	}
@@ -526,6 +530,9 @@ func Merge(base, override *Config) *Config {
 	}
 	if override.UrlscanToken != "" {
 		merged.UrlscanToken = override.UrlscanToken
+	}
+	if override.SecurityTrailsToken != "" {
+		merged.SecurityTrailsToken = override.SecurityTrailsToken
 	}
 	if override.HackerOneUsername != "" {
 		merged.HackerOneUsername = override.HackerOneUsername

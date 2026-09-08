@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amchdd/subdomainabber/internal/core"
 	"github.com/amchdd/subdomainabber/pkg/ratelimit"
 )
 
@@ -88,17 +89,25 @@ func TestProgressWarmsUpETABeforeTenHosts(t *testing.T) {
 
 func TestScanBreakdownIsLocalizedAndActionOriented(t *testing.T) {
 	snapshot := scanProgressSnapshot{
-		Processed: 5, Actionable: 2, Skipped: 1, Elapsed: time.Minute,
+		Processed: 6, Skipped: 1, Elapsed: time.Minute,
 		Classifications: map[string]int64{
 			"LIKELY_TAKEOVERABLE": 1,
 			"MISCONFIGURED":       1,
 			"HEALTHY":             1,
 			"UNKNOWN":             1,
 		},
-		Operations: ratelimit.StatsSnapshot{Granted: 123},
+		ResultStates: map[string]int64{
+			string(core.ResultConfirmed):    1,
+			string(core.ResultCandidate):    1,
+			string(core.ResultObservation):  1,
+			string(core.ResultInconclusive): 1,
+			string(core.ResultHealthy):      1,
+		},
+		ResultReasons: map[string]int64{string(core.ResultInconclusive) + "|TIMEOUT": 1},
+		Operations:    ratelimit.StatsSnapshot{Granted: 123},
 	}
 	output := formatScanBreakdown(snapshot)
-	for _, expected := range []string{"123 operações", "2 hosts acionáveis", "takeover: 1", "configurações: 1", "saudáveis: 1", "inconclusivos: 1"} {
+	for _, expected := range []string{"123 operações", "confirmados: 1", "candidatos: 1", "observações: 1", "saudáveis: 1", "inconclusivos: 1", "tempo esgotado: 1"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("summary missing %q: %s", expected, output)
 		}

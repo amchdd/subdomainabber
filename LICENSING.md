@@ -10,7 +10,7 @@ A presença da Commons Clause torna o projeto **source-available**, e não open 
 
 ## Versões anteriores
 
-A versão `v0.1.0-alpha` e os commits publicados antes da adoção da Commons Clause permanecem disponíveis sob os termos da licença MIT que os acompanhava. A mudança de licença não revoga retroativamente permissões já concedidas para essas versões.
+A versão `v0.1.0` e os commits publicados antes da adoção da Commons Clause permanecem disponíveis sob os termos da licença MIT que os acompanhava. A mudança de licença não revoga retroativamente permissões já concedidas para essas versões.
 
 ## Material de terceiros
 

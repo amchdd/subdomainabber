@@ -1,0 +1,10 @@
+{
+  "host": "assets.example.test",
+  "classification": "LIKELY_TAKEOVERABLE",
+  "provider": "AWS S3",
+  "mock": {
+    "dns": {"a": ["192.0.2.3"], "cname": ["missing-bucket.s3.amazonaws.com"]},
+    "http": {"status": 404, "body": "The specified bucket does not exist"},
+    "tls": {"subject": "assets.example.test", "issuer": "CA de teste"}
+  }
+}

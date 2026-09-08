@@ -87,7 +87,10 @@ func buildSARIF(hosts []core.HostAnalysis) sarifDocument {
 	ruleSet := make(map[string]struct{})
 	var results []sarifResult
 	for _, host := range hosts {
-		if !sarifActionable(host.Classification) {
+		if host.ResultState != "" && host.ResultState != core.ResultCandidate && host.ResultState != core.ResultConfirmed {
+			continue
+		}
+		if !sarifPrioritized(host.Classification) {
 			continue
 		}
 		ruleSet[host.Classification] = struct{}{}
@@ -112,7 +115,7 @@ func buildSARIF(hosts []core.HostAnalysis) sarifDocument {
 	}
 }
 
-func sarifActionable(level string) bool {
+func sarifPrioritized(level string) bool {
 	return level != "" && level != classification.LevelHealthy && level != classification.LevelUnknown && level != classification.LevelInsufficientEvidence
 }
 

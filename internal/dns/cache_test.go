@@ -159,6 +159,42 @@ func TestAXFRAttemptIsCachedPerZoneAndNameserver(t *testing.T) {
 	}
 }
 
+func TestTransferZoneReturnsOwnerNamesAndSharesCache(t *testing.T) {
+	var requests atomic.Int64
+	address, shutdown := startTestDNSServer(t, "tcp", func(writer mdns.ResponseWriter, request *mdns.Msg) {
+		requests.Add(1)
+		soa := &mdns.SOA{
+			Hdr: mdns.RR_Header{Name: "example.com.", Rrtype: mdns.TypeSOA, Class: mdns.ClassINET, Ttl: 60},
+			Ns:  "ns1.example.com.", Mbox: "hostmaster.example.com.", Serial: 1,
+		}
+		response := new(mdns.Msg)
+		response.SetReply(request)
+		response.Answer = []mdns.RR{
+			soa,
+			&mdns.A{Hdr: mdns.RR_Header{Name: "api.example.com.", Rrtype: mdns.TypeA, Class: mdns.ClassINET, Ttl: 60}, A: net.ParseIP("192.0.2.10")},
+			soa,
+		}
+		_ = writer.WriteMsg(response)
+	})
+	defer shutdown()
+
+	resolver := New(nil)
+	names, err := resolver.TransferZone(context.Background(), "example.com", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 || names[0] != "api.example.com" || names[1] != "example.com" {
+		t.Fatalf("nomes transferidos inesperados: %v", names)
+	}
+	allowed, err := resolver.AttemptAXFR(context.Background(), "example.com", address)
+	if err != nil || !allowed {
+		t.Fatalf("resultado em cache inesperado: allowed=%t err=%v", allowed, err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("transferência repetida: %d", requests.Load())
+	}
+}
+
 func TestDNSSECResultIsCachedByZoneAndResetPerBatch(t *testing.T) {
 	var requests atomic.Int64
 	address, shutdown := startTestDNSServer(t, "udp", func(writer mdns.ResponseWriter, request *mdns.Msg) {

@@ -71,6 +71,7 @@ type HostAnalysis struct {
 	CDN                string                     `json:"cdn,omitempty"`
 	Headers            map[string][]string        `json:"headers,omitempty"` // Apenas se --headers ativo
 	HTTPObservations   map[string]HTTPObservation `json:"http_observations,omitempty"`
+	HTTPCorrelation    *HTTPCorrelation           `json:"http_correlation,omitempty"`
 	Redirects          map[string]RedirectChain   `json:"redirects,omitempty"`
 	WebDependencies    []WebDependency            `json:"web_dependencies,omitempty"`
 	TLS                *TLSObservation            `json:"tls,omitempty"`
@@ -85,6 +86,9 @@ type HostAnalysis struct {
 	SPFCandidates      []SPFCandidate             `json:"spf_candidates,omitempty"`
 	CloudIPCandidates  []CloudIPCandidate         `json:"cloud_ip_candidates,omitempty"`
 	ScanProfile        *ScanProfile               `json:"scan_profile,omitempty"`
+	Inferences         []Inference                `json:"inferences,omitempty"`
+	Decision           *Decision                  `json:"decision,omitempty"`
+	ResultState        ResultState                `json:"result_state"`
 
 	TestedVectors  []string `json:"tested_vectors,omitempty"` // Lista de módulos que efetivamente executaram
 	CoverageScore  float64  `json:"coverage_score"`           // Teto de confiança calculado
@@ -270,6 +274,23 @@ func (h *HostAnalysis) AddMutationResult(result MutationResult) {
 	h.MutationResults = append(h.MutationResults, result)
 }
 
+func (h *HostAnalysis) AddInference(inference Inference) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.Inferences = append(h.Inferences, inference)
+}
+
+func (h *HostAnalysis) SetHTTPCorrelation(correlation HTTPCorrelation) {
+	h.InitMutex()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	copy := correlation
+	copy.ReasonCodes = append([]string(nil), correlation.ReasonCodes...)
+	copy.TransportSignals = append([]string(nil), correlation.TransportSignals...)
+	h.HTTPCorrelation = &copy
+}
+
 func cloneHTTPObservation(observation HTTPObservation) HTTPObservation {
 	observation.Body = append([]byte(nil), observation.Body...)
 	observation.NormalizedBody = append([]byte(nil), observation.NormalizedBody...)
@@ -280,5 +301,13 @@ func cloneHTTPObservation(observation HTTPObservation) HTTPObservation {
 		}
 		observation.Headers = headers
 	}
+	if observation.RawHeaders != nil {
+		headers := make(map[string][]string, len(observation.RawHeaders))
+		for name, values := range observation.RawHeaders {
+			headers[name] = append([]string(nil), values...)
+		}
+		observation.RawHeaders = headers
+	}
+	observation.Cookies = append([]HTTPCookie(nil), observation.Cookies...)
 	return observation
 }

@@ -97,6 +97,21 @@ func TestPlatformCredentialsSupportYAMLEnvironmentAndMerge(t *testing.T) {
 	}
 }
 
+func TestSecurityTrailsTokenSupportsEnvironmentAndMerge(t *testing.T) {
+	t.Setenv("SABBER_SECURITYTRAILS_TOKEN", "ambiente")
+	cfg := Defaults()
+	if err := ApplyEnv(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SecurityTrailsToken != "ambiente" {
+		t.Fatalf("token do SecurityTrails não aplicado: %q", cfg.SecurityTrailsToken)
+	}
+	merged := Merge(cfg, &Config{SecurityTrailsToken: "sobreposto"})
+	if merged.SecurityTrailsToken != "sobreposto" {
+		t.Fatalf("token do SecurityTrails não mesclado: %q", merged.SecurityTrailsToken)
+	}
+}
+
 func TestApplyEnvPreservesInvalidNumericValueForRuntimeValidation(t *testing.T) {
 	t.Setenv("SABBER_RATE_LIMIT", "0")
 

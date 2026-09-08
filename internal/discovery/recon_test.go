@@ -83,6 +83,29 @@ type reconResolver struct {
 	wildcard map[string]dns.WildcardSignature
 }
 
+type zoneReconResolver struct {
+	*reconResolver
+	nameservers []string
+	names       []string
+}
+
+type ptrReconResolver struct {
+	*reconResolver
+	names map[string][]string
+}
+
+func (resolver *ptrReconResolver) ResolveAddressPTR(_ context.Context, address string) ([]string, error) {
+	return append([]string(nil), resolver.names[address]...), nil
+}
+
+func (resolver *zoneReconResolver) LookupNS(context.Context, string) ([]string, error) {
+	return append([]string(nil), resolver.nameservers...), nil
+}
+
+func (resolver *zoneReconResolver) TransferZone(context.Context, string, string) ([]string, error) {
+	return append([]string(nil), resolver.names...), nil
+}
+
 func (resolver *reconResolver) ResolveA(_ context.Context, name string) ([]string, error) {
 	return append([]string(nil), resolver.records[name].A...), nil
 }
@@ -207,6 +230,87 @@ func TestDiscoverFiltersHierarchicalWildcard(t *testing.T) {
 	}
 }
 
+func TestDiscoverKeepsObservedWildcardOutOfTargets(t *testing.T) {
+	resolver := &reconResolver{
+		records: map[string]DNSRecord{
+			"example.test":      {A: []string{"192.0.2.1"}},
+			"seen.example.test": {A: []string{"198.51.100.10"}},
+		},
+		wildcard: map[string]dns.WildcardSignature{
+			"example.test": {A: []string{"198.51.100.10"}},
+		},
+	}
+	engine := &Engine{
+		resolver:  resolver,
+		providers: []Source{reconSource{name: "inventário", names: []string{"seen.example.test"}}},
+	}
+	result, err := engine.Discover(context.Background(), "example.test", Options{Mode: ModePassive, Concurrency: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, found := result.Find("seen.example.test")
+	if !found || !candidate.Wildcard {
+		t.Fatalf("nome observado em wildcard não foi preservado: %+v", result.Names)
+	}
+	if len(result.Targets()) != 0 || result.Stats.WildcardFiltered != 1 {
+		t.Fatalf("wildcard observado entrou nos alvos: targets=%v stats=%+v", result.Targets(), result.Stats)
+	}
+}
+
+func TestDiscoverHarvestsNamesFromZoneTransfer(t *testing.T) {
+	resolver := &zoneReconResolver{
+		reconResolver: &reconResolver{records: map[string]DNSRecord{
+			"example.test":        {A: []string{"192.0.2.1"}},
+			"hidden.example.test": {A: []string{"192.0.2.20"}},
+		}},
+		nameservers: []string{"ns1.example.net"},
+		names:       []string{"example.test", "hidden.example.test"},
+	}
+	engine := &Engine{resolver: resolver}
+	result, err := engine.Discover(context.Background(), "example.test", Options{
+		Mode: ModeExhaustive, Concurrency: 2, Words: []string{"unused"}, MaxRounds: 1,
+		MaxDepth: 3, MaxCandidates: 20, MaxTested: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, found := result.Find("hidden.example.test")
+	if !found || !candidate.Resolved {
+		t.Fatalf("nome transferido não foi descoberto: %+v", result.Names)
+	}
+	if len(candidate.Origins) != 1 || candidate.Origins[0].Method != "axfr" {
+		t.Fatalf("origem AXFR ausente: %+v", candidate.Origins)
+	}
+}
+
+func TestDiscoverPivotsPTRBackIntoScope(t *testing.T) {
+	resolver := &ptrReconResolver{
+		reconResolver: &reconResolver{records: map[string]DNSRecord{
+			"example.test":        {A: []string{"192.0.2.1"}},
+			"origin.example.test": {A: []string{"192.0.2.1"}},
+		}},
+		names: map[string][]string{"192.0.2.1": {"origin.example.test", "outside.invalid"}},
+	}
+	engine := &Engine{resolver: resolver}
+	result, err := engine.Discover(context.Background(), "example.test", Options{
+		Mode: ModeStandard, Concurrency: 2, Words: []string{"unused"}, MaxRounds: 1,
+		MaxDepth: 3, MaxCandidates: 20, MaxTested: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, found := result.Find("origin.example.test")
+	if !found || !candidate.Resolved {
+		t.Fatalf("nome PTR interno não foi descoberto: %+v", result.Names)
+	}
+	if _, found := result.Find("outside.invalid"); found {
+		t.Fatalf("PTR externo entrou no escopo: %+v", result.Names)
+	}
+	if len(candidate.Origins) != 1 || candidate.Origins[0].Method != "ptr" {
+		t.Fatalf("origem PTR ausente: %+v", candidate.Origins)
+	}
+}
+
 func TestResultTargetsKeepsOnlyResolvedSubdomains(t *testing.T) {
 	result := Result{Root: "example.test", Names: []Candidate{
 		{Name: "example.test", Resolved: true},
@@ -228,6 +332,39 @@ func TestValidateOptionsRejectsInvalidMode(t *testing.T) {
 	err := ValidateOptions(Options{Mode: Mode("unknown")})
 	if err == nil || !strings.Contains(err.Error(), "modo de recon inválido") {
 		t.Fatalf("modo inválido aceito: %v", err)
+	}
+}
+
+func TestValidateOptionsRejectsInvalidTestLimit(t *testing.T) {
+	err := ValidateOptions(Options{Mode: ModeStandard, MaxTested: 20000001})
+	if err == nil || !strings.Contains(err.Error(), "max-tested") {
+		t.Fatalf("limite inválido aceito: %v", err)
+	}
+}
+
+func TestModeLimits(t *testing.T) {
+	tests := []struct {
+		mode       Mode
+		rounds     int
+		depth      int
+		candidates int
+		tested     int
+		recursive  int
+		assets     int
+	}{
+		{mode: ModePassive, rounds: 0, depth: 20, candidates: 250000, tested: 250000, recursive: 2, assets: 4},
+		{mode: ModeStandard, rounds: 1, depth: 6, candidates: 250000, tested: 250000, recursive: 3, assets: 4},
+		{mode: ModeExhaustive, rounds: 4, depth: 12, candidates: 1000000, tested: 1000000, recursive: 2, assets: 12},
+	}
+	for _, test := range tests {
+		got, err := (Options{Mode: test.mode}).normalized()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.MaxRounds != test.rounds || got.MaxDepth != test.depth || got.MaxCandidates != test.candidates ||
+			got.MaxTested != test.tested || got.RecursiveThreshold != test.recursive || got.AssetLimit != test.assets {
+			t.Errorf("perfil %s inesperado: %+v", test.mode, got)
+		}
 	}
 }
 
@@ -266,6 +403,28 @@ func TestGenerateSeedsSkipsAttemptedBeforeLimit(t *testing.T) {
 	}
 }
 
+func TestGenerateSeedsDistributesWordsAcrossZones(t *testing.T) {
+	attempted := map[string]struct{}{
+		"api.example.test": {},
+		"dev.example.test": {},
+	}
+	frontier := []Candidate{
+		{Name: "one.example.test", Root: "example.test", Resolved: true},
+		{Name: "two.example.test", Root: "example.test", Resolved: true},
+	}
+	catalog := map[string]Candidate{
+		"one.example.test": frontier[0],
+		"two.example.test": frontier[1],
+	}
+	seeds := generateSeeds(
+		"example.test", frontier, catalog, attempted, []string{"api", "dev"},
+		Options{MaxDepth: 3, RecursiveThreshold: 1}, 2,
+	)
+	if len(seeds) != 2 || seeds[0].name != "api.one.example.test" || seeds[1].name != "api.two.example.test" {
+		t.Fatalf("zonas não receberam o mesmo termo antes do próximo: %+v", seeds)
+	}
+}
+
 func TestScrapeSeedsSkipsUnresolvedNames(t *testing.T) {
 	var requests atomic.Int32
 	engine := &Engine{client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -289,7 +448,73 @@ func TestPassiveSeedsDoNotSpendBudgetOnDuplicates(t *testing.T) {
 	if len(seeds) != 3 {
 		t.Fatalf("proveniência ou orçamento incorretos: %+v", seeds)
 	}
-	if runs[0].Count != 2 || runs[0].Truncated || runs[1].Count != 2 || !runs[1].Truncated {
+	if runs[0].Count != 2 || !runs[0].Truncated || runs[1].Count != 2 || runs[1].Truncated {
 		t.Fatalf("contagem das fontes incorreta: %+v", runs)
+	}
+}
+
+func TestPassiveSeedsDistributeBudgetAcrossSources(t *testing.T) {
+	engine := &Engine{providers: []Source{
+		reconSource{name: "fonte-a", names: []string{"a.example.test", "b.example.test", "c.example.test"}},
+		reconSource{name: "fonte-b", names: []string{"x.example.test"}},
+	}}
+	seeds, runs := engine.passiveSeeds(context.Background(), "example.test", 2)
+	if len(seeds) != 2 || seeds[0].name != "a.example.test" || seeds[1].name != "x.example.test" {
+		t.Fatalf("orçamento não distribuído: %+v", seeds)
+	}
+	if !runs[0].Truncated || runs[1].Truncated {
+		t.Fatalf("truncamento incorreto: %+v", runs)
+	}
+}
+
+func TestCheckpointPersistsAttemptedNames(t *testing.T) {
+	engine := &Engine{
+		resolver: &reconResolver{records: map[string]DNSRecord{
+			"example.test":     {A: []string{"192.0.2.1"}},
+			"api.example.test": {A: []string{"192.0.2.2"}},
+		}},
+		providers: []Source{reconSource{name: "inventário", names: []string{"api.example.test", "old.example.test"}}},
+	}
+	var checkpoint Checkpoint
+	_, err := engine.Discover(context.Background(), "example.test", Options{
+		Mode: ModePassive, Concurrency: 2, MaxCandidates: 10, MaxTested: 10,
+		Progress: func(state State) error {
+			checkpoint = state.Checkpoint
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(checkpoint.Attempted, ",")
+	for _, name := range []string{"api.example.test", "example.test", "old.example.test"} {
+		if !strings.Contains(joined, name) {
+			t.Fatalf("nome testado ausente do checkpoint: %s em %v", name, checkpoint.Attempted)
+		}
+	}
+}
+
+func TestDefaultWordsProvideContextualCoverage(t *testing.T) {
+	standard := DefaultWords(ModeStandard)
+	exhaustive := DefaultWords(ModeExhaustive)
+	if len(standard) < 100 || len(exhaustive) <= len(standard) {
+		t.Fatalf("cobertura insuficiente: standard=%d exhaustive=%d", len(standard), len(exhaustive))
+	}
+	joined := "," + strings.Join(exhaustive, ",") + ","
+	for _, word := range []string{"api-staging", "staging-api", "api-sa-east-1"} {
+		if !strings.Contains(joined, ","+word+",") {
+			t.Fatalf("combinação contextual ausente: %s", word)
+		}
+	}
+}
+
+func TestGenerateMutationsFlipsEnvironmentAndRegion(t *testing.T) {
+	names := GenerateMutations("example.test", "api-dev.example.test", []string{"internal"})
+	names = append(names, GenerateMutations("example.test", "api.dev.example.test", []string{"internal"})...)
+	joined := "," + strings.Join(names, ",") + ","
+	for _, name := range []string{"api-prod.example.test", "api-dev.internal.example.test", "internal-api-dev.example.test", "api.prod.example.test"} {
+		if !strings.Contains(joined, ","+name+",") {
+			t.Fatalf("alteração ausente: %s em %v", name, names)
+		}
 	}
 }

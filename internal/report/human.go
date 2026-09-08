@@ -30,39 +30,39 @@ type fieldLine struct {
 }
 
 var genericRanks = map[string]int{
-	"ORIGIN_DIRECT_MATCH":                80,
-	"DNSSEC_BOGUS":                       60,
-	"CLOUD_S3_WRITABLE":                  75,
-	"CLOUD_S3_LISTABLE":                  65,
-	"CLOUD_AZURE_BLOB_LISTABLE":          65,
-	"CLOUD_GCS_LISTABLE":                 65,
-	"DANGLING_REDIRECT":                  55,
-	"HTTPS_DOWNGRADE_REDIRECT":           50,
-	"HTTP_HTTPS_PORT_INCONSISTENT":       45,
-	"HTTP_HTTPS_REDIRECT_MISSING":        40,
-	"CSP_DANGLING_DEPENDENCY":            55,
-	"SUBRESOURCE_DANGLING":               55,
-	"DEAD_ASSET_REFERENCE":               50,
-	"DEAD_ASSET_HTTP":                    35,
-	"HTTP_OPEN_REDIRECT":                 55,
-	"HTTP_HSTS_MISSING":                  30,
-	"HTTP_CSP_MISSING":                   30,
-	"EMAIL_SPF_PERMISSIVE":               40,
-	"EMAIL_SPF_MISSING":                  25,
-	"EMAIL_DMARC_MISSING":                25,
-	"TLS_EXPIRED":                        35,
-	"TLS_SELF_SIGNED":                    30,
-	"TLS_MISMATCH":                       30,
-	"SNI_CERT_MISMATCH":                  25,
-	"TLS_CERTIFICATE_DRIFT":              20,
-	"CAA_POLICY_INCONSISTENT":            20,
-	"CAA_ISSUER_MISMATCH":                20,
-	"TXT_OWNERSHIP_TOKEN_RESIDUAL":       15,
-	"PROVIDER_MIGRATION_DETECTED":        25,
-	"PROVIDER_MIGRATION_STALE_REFERENCE": 30,
-	"SHADOW_IT_DETECTED":                 20,
-	"RELATED_DOMAIN_COOKIE_SCOPE":        35,
-	"RELATED_DOMAIN_CORS_CREDENTIALS":    40,
+	"ORIGIN_DIRECT_MATCH":                  80,
+	"DNSSEC_BOGUS":                         60,
+	"CLOUD_S3_WRITABLE":                    75,
+	"CLOUD_S3_LISTABLE":                    65,
+	"CLOUD_AZURE_BLOB_LISTABLE":            65,
+	"CLOUD_GCS_LISTABLE":                   65,
+	"DANGLING_REDIRECT":                    55,
+	"HTTPS_DOWNGRADE_REDIRECT":             50,
+	"HTTP_HTTPS_PORT_INCONSISTENT":         45,
+	"PLAINTEXT_WEB_CONTENT":                50,
+	"PLAINTEXT_AUTH_INTERFACE":             75,
+	"HTTP_SENSITIVE_COOKIE_WITHOUT_SECURE": 70,
+	"CSP_DANGLING_DEPENDENCY":              55,
+	"SUBRESOURCE_DANGLING":                 55,
+	"DEAD_ASSET_REFERENCE":                 50,
+	"DEAD_ASSET_HTTP":                      35,
+	"HTTP_OPEN_REDIRECT":                   55,
+	"EMAIL_SPF_PERMISSIVE":                 40,
+	"EMAIL_SPF_MISSING":                    25,
+	"EMAIL_DMARC_MISSING":                  25,
+	"TLS_EXPIRED":                          35,
+	"TLS_SELF_SIGNED":                      30,
+	"TLS_MISMATCH":                         30,
+	"SNI_CERT_MISMATCH":                    25,
+	"TLS_CERTIFICATE_DRIFT":                20,
+	"CAA_POLICY_INCONSISTENT":              20,
+	"CAA_ISSUER_MISMATCH":                  20,
+	"TXT_OWNERSHIP_TOKEN_RESIDUAL":         15,
+	"PROVIDER_MIGRATION_DETECTED":          25,
+	"PROVIDER_MIGRATION_STALE_REFERENCE":   30,
+	"SHADOW_IT_DETECTED":                   20,
+	"RELATED_DOMAIN_COOKIE_SCOPE":          35,
+	"RELATED_DOMAIN_CORS_CREDENTIALS":      40,
 }
 
 func Human(analysis *core.HostAnalysis, confidence string) string {
@@ -169,17 +169,18 @@ func evidenceFinding(analysis *core.HostAnalysis, evidence core.Evidence, resour
 	if description != "" {
 		evidenceLine += " — " + description
 	}
+	fields := []fieldLine{
+		{"Categoria", category(analysis.Classification)},
+		{"Vetor", context.Vector},
+		{"Evidência principal", evidenceLine},
+		{"Fonte", evidence.Source},
+	}
+	fields = append(fields, decisionFields(analysis, confidence)...)
+	fields = append(fields, fieldLine{"Próximo passo", nextStep(analysis)})
 	return renderBlock(
 		presentation.Classification(analysis.Classification), resource,
 		toneForClassification(analysis.Classification),
-		[]fieldLine{
-			{"Categoria", category(analysis.Classification)},
-			{"Vetor", context.Vector},
-			{"Evidência principal", evidenceLine},
-			{"Fonte", evidence.Source},
-			{"Confiança da análise", confidence},
-			{"Próximo passo", "revise a evidência estruturada e confirme o impacto no escopo"},
-		}, options,
+		fields, options,
 	)
 }
 
@@ -245,19 +246,70 @@ func fallbackFinding(analysis *core.HostAnalysis, confidence string, options Opt
 	if description != "" {
 		evidence += " — " + description
 	}
+	fields := []fieldLine{
+		{"Categoria", category(analysis.Classification)},
+		{"Vetor", primary.Vector},
+		{"Evidência principal", evidence},
+	}
+	fields = append(fields, decisionFields(analysis, confidence)...)
+	fields = append(fields, fieldLine{"Próximo passo", nextStep(analysis)})
 	return renderBlock(
-		presentation.Classification(analysis.Classification),
+		resultLabel(analysis),
 		valueOr(primary.Resource, analysis.Host),
 		toneForClassification(analysis.Classification),
-		[]fieldLine{
-			{"Categoria", category(analysis.Classification)},
-			{"Vetor", primary.Vector},
-			{"Evidência principal", evidence},
-			{"Confiança da análise", confidence},
-			{"Próximo passo", "inspecione as evidências estruturadas com --explain-json"},
-		},
+		fields,
 		options,
 	)
+}
+
+func decisionFields(analysis *core.HostAnalysis, fallback string) []fieldLine {
+	if analysis.Decision == nil {
+		return []fieldLine{{"Confiança da classificação", fallback}}
+	}
+	impact := "não"
+	if analysis.Decision.ImpactConfirmed {
+		impact = "sim"
+	}
+	return []fieldLine{
+		{"Estado do resultado", presentation.Value(string(analysis.Decision.State))},
+		{"Regra", presentation.Rule(analysis.Decision.Rule)},
+		{"Motivos", localizedReasons(analysis.Decision.ReasonCodes)},
+		{"Confiança da observação", strconv.Itoa(analysis.Decision.ObservationConfidence) + "%"},
+		{"Confiança da classificação", strconv.Itoa(analysis.Decision.ClassificationConfidence) + "%"},
+		{"Confiança do impacto", strconv.Itoa(analysis.Decision.ImpactConfidence) + "%"},
+		{"Impacto confirmado", impact},
+	}
+}
+
+func localizedReasons(reasons []string) string {
+	translated := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		translated = append(translated, presentation.Reason(reason))
+	}
+	return strings.Join(translated, ", ")
+}
+
+func resultLabel(analysis *core.HostAnalysis) string {
+	if analysis.Decision != nil && analysis.Decision.State != "" {
+		return presentation.Value(string(analysis.Decision.State))
+	}
+	return presentation.Classification(analysis.Classification)
+}
+
+func nextStep(analysis *core.HostAnalysis) string {
+	if analysis.Decision == nil {
+		return "inspecione as evidências estruturadas com --explain-json"
+	}
+	switch analysis.Decision.State {
+	case core.ResultSuppressed:
+		return "nenhuma ação sugerida; a evidência não demonstrou exposição"
+	case core.ResultObservation:
+		return "use a observação como contexto de hardening"
+	case core.ResultInconclusive:
+		return "revise o motivo inconclusivo e repita a coleta se necessário"
+	default:
+		return "revise a evidência estruturada e confirme o impacto"
+	}
 }
 
 func delegationFinding(analysis *core.HostAnalysis, confidence string, options Options) string {

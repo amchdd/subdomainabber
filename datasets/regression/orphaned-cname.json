@@ -1,0 +1,9 @@
+{
+  "host": "orphaned.example.test",
+  "classification": "ORPHANED",
+  "mock": {
+    "dns": {"cname": ["missing-bucket.s3.amazonaws.com"]},
+    "http": {"status": 404, "body": "Not Found"},
+    "tls": {"subject": "orphaned.example.test", "issuer": "CA de teste"}
+  }
+}

@@ -66,39 +66,7 @@ func (c *HttpSecurityCollector) Collect(ctx context.Context, analysis *core.Host
 
 func (c *HttpSecurityCollector) collectHeaders(analysis *core.HostAnalysis) bool {
 	observation, ok := analysis.HTTPObservation("https")
-	if !ok || !observation.Complete {
-		return false
-	}
-	hasHSTS := false
-	hasCSP := false
-	for k := range observation.Headers {
-		kLower := strings.ToLower(k)
-		if kLower == "strict-transport-security" {
-			hasHSTS = true
-		}
-		if kLower == "content-security-policy" {
-			hasCSP = true
-		}
-	}
-	if !hasHSTS {
-		analysis.AddEvidence(core.Evidence{
-			Type:        "HTTP_HSTS_MISSING",
-			Source:      "HttpSecurity",
-			Description: "O cabeçalho Strict-Transport-Security está ausente.",
-			Weight:      0,
-			Confidence:  100,
-		})
-	}
-	if !hasCSP {
-		analysis.AddEvidence(core.Evidence{
-			Type:        "HTTP_CSP_MISSING",
-			Source:      "HttpSecurity",
-			Description: "O cabeçalho Content-Security-Policy está ausente.",
-			Weight:      0,
-			Confidence:  100,
-		})
-	}
-	return true
+	return ok && observation.Complete
 }
 
 func hasCompleteHTTPBaseline(analysis *core.HostAnalysis) bool {

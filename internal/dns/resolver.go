@@ -39,6 +39,7 @@ const (
 	// maxDoHResponseSize é o maior tamanho possível de uma mensagem DNS
 	// transportada por TCP ou HTTPS, conforme o campo de tamanho de 16 bits.
 	maxDoHResponseSize = 65535
+	maxAXFRNames       = 100000
 )
 
 // defaultServers contém os resolvedores DNS públicos usados quando nenhum
@@ -1105,6 +1106,14 @@ func (r *Resolver) ResolvePTR(ctx context.Context, fqdn string) ([]string, error
 	return ptrs, nil
 }
 
+func (r *Resolver) ResolveAddressPTR(ctx context.Context, address string) ([]string, error) {
+	reverse, err := dns.ReverseAddr(strings.TrimSpace(address))
+	if err != nil {
+		return nil, fmt.Errorf("endereço inválido para PTR: %w", err)
+	}
+	return r.ResolvePTR(ctx, reverse)
+}
+
 func (r *Resolver) ResolveDNAME(ctx context.Context, fqdn string) ([]core.DNAMERecord, error) {
 	resp, err := r.query(ctx, fqdn, dns.TypeDNAME)
 	if err != nil {
@@ -1317,38 +1326,49 @@ func looksLikeSRVOwner(host string) bool {
 // AttemptAXFR tenta realizar uma transferência de zona (AXFR) via TCP contra o nameserver fornecido.
 // Retorna true se a transferência foi bem-sucedida.
 func (r *Resolver) AttemptAXFR(ctx context.Context, domain, nsServer string) (bool, error) {
+	result, err := r.zoneTransfer(ctx, domain, nsServer)
+	return result.success, err
+}
+
+func (r *Resolver) TransferZone(ctx context.Context, domain, nsServer string) ([]string, error) {
+	result, err := r.zoneTransfer(ctx, domain, nsServer)
+	return append([]string(nil), result.names...), err
+}
+
+func (r *Resolver) zoneTransfer(ctx context.Context, domain, nsServer string) (axfrResult, error) {
 	key := normalizeDNSName(domain) + "|" + normalizeDNSName(nsServer)
 	if cached, ok := r.axfrCache.Load(key); ok {
 		result := cached.(axfrResult)
-		return result.success, result.err
+		return result, result.err
 	}
 	value, err, _ := r.axfrGroup.Do(key, func() (interface{}, error) {
 		if cached, ok := r.axfrCache.Load(key); ok {
 			return cached.(axfrResult), nil
 		}
-		success, transferErr := r.attemptAXFRUncached(ctx, domain, nsServer)
-		result := axfrResult{success: success, err: transferErr}
+		success, names, transferErr := r.attemptAXFRUncached(ctx, domain, nsServer)
+		result := axfrResult{success: success, names: names, err: transferErr}
 		if !errors.Is(transferErr, context.Canceled) && !errors.Is(transferErr, context.DeadlineExceeded) {
 			r.axfrCache.Store(key, result)
 		}
 		return result, nil
 	})
 	if err != nil {
-		return false, err
+		return axfrResult{}, err
 	}
 	result := value.(axfrResult)
-	return result.success, result.err
+	return result, result.err
 }
 
 type axfrResult struct {
 	success bool
+	names   []string
 	err     error
 }
 
-func (r *Resolver) attemptAXFRUncached(ctx context.Context, domain, nsServer string) (bool, error) {
+func (r *Resolver) attemptAXFRUncached(ctx context.Context, domain, nsServer string) (bool, []string, error) {
 	endpoint, endpointErr := r.nameserverEndpoint(ctx, nsServer)
 	if endpointErr != nil {
-		return false, endpointErr
+		return false, nil, endpointErr
 	}
 
 	m := new(dns.Msg)
@@ -1359,24 +1379,50 @@ func (r *Resolver) attemptAXFRUncached(ctx context.Context, domain, nsServer str
 	transfer.ReadTimeout = r.operationTimeout()
 
 	if err := r.wait(ctx); err != nil {
-		return false, err
+		return false, nil, err
 	}
 	env, err := transfer.In(m, endpoint)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 
 	success := false
+	seen := make(map[string]struct{})
+	var names []string
+	var firstErr error
 	for e := range env {
 		if e.Error != nil {
-			continue // Erro em um envelope, mas pode já ter recebido algo ou falhado geral
+			if firstErr == nil {
+				firstErr = e.Error
+			}
+			continue
 		}
 		if len(e.RR) > 0 {
-			success = true // Registros recebidos
+			success = true
+		}
+		for _, record := range e.RR {
+			name := normalizeDNSName(record.Header().Name)
+			if name == "" || !isDNSAncestorOrSelf(name, normalizeDNSName(domain)) {
+				continue
+			}
+			if _, found := seen[name]; found {
+				continue
+			}
+			if len(names) >= maxAXFRNames {
+				return false, nil, fmt.Errorf("a transferência AXFR excedeu o limite de %d nomes", maxAXFRNames)
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		if err := ctx.Err(); err != nil {
+			return false, nil, err
 		}
 	}
-
-	return success, nil
+	sort.Strings(names)
+	if !success && firstErr != nil {
+		return false, nil, firstErr
+	}
+	return success, names, firstErr
 }
 
 func (r *Resolver) nameserverEndpoint(ctx context.Context, nameserver string) (string, error) {

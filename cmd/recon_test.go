@@ -117,3 +117,58 @@ func TestRunReconNormalizesRootBeforePersistence(t *testing.T) {
 		t.Fatalf("raiz não normalizada: %q", stub.root)
 	}
 }
+
+func TestReconRoundsDefaultIsSelectedByMode(t *testing.T) {
+	flag := reconCmd.Flags().Lookup("max-rounds")
+	if flag == nil || flag.DefValue != "0" {
+		t.Fatalf("max-rounds deveria delegar o padrão ao modo: %+v", flag)
+	}
+}
+
+func TestParseReconView(t *testing.T) {
+	view, err := parseReconView("sources", []string{"unresolved,wildcards"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.format != "sources" || !view.unresolved || !view.wildcards {
+		t.Fatalf("configuração de saída inesperada: %+v", view)
+	}
+}
+
+func TestParseReconViewAll(t *testing.T) {
+	view, err := parseReconView("jsonl", []string{"all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.unresolved || !view.wildcards {
+		t.Fatalf("all não incluiu todo o inventário: %+v", view)
+	}
+}
+
+func TestParseReconViewRejectsUnknownValues(t *testing.T) {
+	if _, err := parseReconView("xml", nil); err == nil {
+		t.Fatal("formato desconhecido foi aceito")
+	}
+	if _, err := parseReconView("text", []string{"inactive"}); err == nil {
+		t.Fatal("inclusão desconhecida foi aceita")
+	}
+}
+
+func TestReconKeepsAdvancedFlagsOutOfBasicHelp(t *testing.T) {
+	hidden := []string{
+		"max-rounds", "max-depth", "max-candidates", "max-tested", "recursive-threshold", "asset-limit",
+		"json", "jsonl", "show-unresolved", "show-sources", "show-wildcards",
+	}
+	for _, name := range hidden {
+		flag := reconCmd.Flags().Lookup(name)
+		if flag == nil || !flag.Hidden {
+			t.Errorf("flag %s deveria permanecer compatível e oculta", name)
+		}
+	}
+	for _, name := range []string{"mode", "wordlist", "concurrency", "resume", "format", "include"} {
+		flag := reconCmd.Flags().Lookup(name)
+		if flag == nil || flag.Hidden {
+			t.Errorf("flag %s deveria aparecer na ajuda", name)
+		}
+	}
+}

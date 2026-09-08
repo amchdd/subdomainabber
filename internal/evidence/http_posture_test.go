@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/amchdd/subdomainabber/internal/classification"
 	"github.com/amchdd/subdomainabber/internal/core"
 )
 
@@ -16,7 +17,8 @@ func TestPostureMissingUpgrade(t *testing.T) {
 	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
 		t.Fatal(err)
 	}
-	if !hasEvidenceType(analysis.Evidences, "HTTP_HTTPS_REDIRECT_MISSING") {
+	classification.Process(analysis)
+	if !hasEvidenceType(analysis.Evidences, "HTTP_NO_HTTPS_UPGRADE") {
 		t.Fatalf("postura sem upgrade não detectada: %+v", analysis.Evidences)
 	}
 }
@@ -30,7 +32,8 @@ func TestPostureAcceptsCanonicalHTTPSRedirect(t *testing.T) {
 	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
 		t.Fatal(err)
 	}
-	if hasEvidenceType(analysis.Evidences, "HTTP_HTTPS_REDIRECT_MISSING") {
+	classification.Process(analysis)
+	if hasEvidenceType(analysis.Evidences, "HTTP_NO_HTTPS_UPGRADE") {
 		t.Fatalf("upgrade para hostname canônico foi marcado como ausente: %+v", analysis.Evidences)
 	}
 }
@@ -41,14 +44,15 @@ func TestPostureAcceptsHTTPSAtEndOfChain(t *testing.T) {
 		http.Header{"Location": []string{"/login"}}, nil, true, 0, "", ""))
 	analysis.SetHTTPObservation("https", newHTTPObservation("https", http.StatusOK, nil, nil, true, 0, "", ""))
 	analysis.SetRedirectChain("http", core.RedirectChain{
-		Scheme:   "http",
-		FinalURL: "https://app.example.test/login",
+		Scheme: "http", FinalURL: "https://app.example.test/login", StoppedReason: "FINAL_RESPONSE",
+		Hops: []core.RedirectHop{{URL: "https://app.example.test/login", Scheme: "https", StatusCode: 200}},
 	})
 
 	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
 		t.Fatal(err)
 	}
-	if hasEvidenceType(analysis.Evidences, "HTTP_HTTPS_REDIRECT_MISSING") {
+	classification.Process(analysis)
+	if hasEvidenceType(analysis.Evidences, "HTTP_NO_HTTPS_UPGRADE") {
 		t.Fatalf("upgrade concluído na cadeia foi marcado como ausente: %+v", analysis.Evidences)
 	}
 }
@@ -61,6 +65,7 @@ func TestPostureDowngrade(t *testing.T) {
 	if err := NewHTTPPostureCollector().Collect(context.Background(), analysis); err != nil {
 		t.Fatal(err)
 	}
+	classification.Process(analysis)
 	if !hasEvidenceType(analysis.Evidences, "HTTPS_DOWNGRADE_REDIRECT") {
 		t.Fatalf("downgrade não detectado: %+v", analysis.Evidences)
 	}
